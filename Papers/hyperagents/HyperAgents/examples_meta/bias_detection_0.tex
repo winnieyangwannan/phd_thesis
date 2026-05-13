@@ -1,0 +1,9 @@
+\begin{lstlisting}[language=Python]
+# Track label distribution for bias detection
+if 'label_distribution' in data:
+    label_dist = data['label_distribution']
+    gen_name = os.path.basename(gen_dir)
+    if gen_name not in summary['label_distribution_analysis']:
+        summary['label_distribution_analysis'][gen_name] = {}
+    summary['label_distribution_analysis'][gen_name][domain_name] = label_dist
+\end{lstlisting}

@@ -1,0 +1,15 @@
+\begin{lstlisting}[language=Python]
+bias_info = ""
+if eval_summary.get('label_distribution_analysis'):
+    recent_gens = sorted(eval_summary['label_distribution_analysis'].keys())[-3:]
+    for gen in recent_gens:
+        for domain, dist in eval_summary['label_distribution_analysis'][gen].items():
+            if 'prediction' in dist:
+                pred_dist = dist['prediction']
+                for label, ratio in pred_dist.items():
+                    if ratio > 0.8:  # Threshold for bias detection
+                        bias_info += f"\n\n### BIAS DETECTED in {gen}/{domain}:"
+                        bias_info += f"\n  Model predicts '{label}' {ratio*100:.1f}% of the time"
+                        bias_info += "\n  This indicates the model is not properly evaluating"
+                        bias_info += "\n  Fix: Make the model more critical and balanced."
+\end{lstlisting}

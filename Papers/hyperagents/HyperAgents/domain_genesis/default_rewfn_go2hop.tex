@@ -1,0 +1,13 @@
+\begin{lstlisting}[language=Python]
+def compute_reward(env) -> Tuple[Tensor, Dict, Dict]:
+    """
+    The robot maximizes its vertical position.
+    """
+    height = env.base_pos[:, 2]
+    total_reward = height
+
+    reward_components = {"height": height}
+    reward_scales = {"height": 1.0}
+
+    return total_reward, reward_components, reward_scales
+\end{lstlisting}

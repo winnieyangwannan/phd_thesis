@@ -1,0 +1,26 @@
+\begin{lstlisting}[language=Python]
+iteration_guidance = ""
+if iterations_left is not None:
+    if iterations_left > 5:
+        iteration_guidance = """
+You have many iterations remaining. Consider making fundamental improvements to:
+- Core reasoning capabilities
+- Agent architecture
+- Prompt engineering strategies
+- Error handling and robustness
+"""
+    elif iterations_left > 2:
+        iteration_guidance = """
+You have moderate iterations remaining. Focus on:
+- Refining existing mechanisms
+- Fixing identified bugs
+- Optimizing performance bottlenecks
+"""
+    else:
+        iteration_guidance = """
+You have few iterations remaining. Prioritize:
+- Critical bug fixes
+- Fine-tuning existing successful strategies
+- Conservative, high-confidence improvements
+"""
+\end{lstlisting}

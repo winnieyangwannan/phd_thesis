@@ -1,0 +1,29 @@
+\begin{lstlisting}[language=Python]
+class MemoryTool:
+    """Tool for persistent memory storage across agent interactions."""
+
+    def __init__(self, memory_file: str = './memory.json'):
+        self.memory_file = memory_file
+        self.memory = self._load_memory()
+
+    def store(self, key: str, value: any) -> None:
+        """Store information with timestamp for temporal tracking."""
+        self.memory[key] = {
+            "value": value,
+            "timestamp": datetime.now().isoformat()
+        }
+        self._save()
+
+    def retrieve(self, key: str) -> Optional[any]:
+        """Retrieve stored information by key."""
+        return self.memory.get(key, {}).get("value")
+
+    def list_keys(self) -> List[str]:
+        """List all stored memory keys."""
+        return list(self.memory.keys())
+
+    def _save(self):
+        """Persist memory to disk."""
+        with open(self.memory_file, 'w') as f:
+            json.dump(self.memory, f, indent=2)
+\end{lstlisting}

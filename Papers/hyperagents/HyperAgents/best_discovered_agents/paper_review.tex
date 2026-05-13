@@ -1,0 +1,361 @@
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 3798256..42ab625 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -5,7 +5,7 @@ from utils.common import extract_jsons
+ class TaskAgent(AgentSystem):
+     def forward(self, inputs):
+         """
+-        An agent that solves a given task.
++        An agent that solves a given task with enhanced reasoning and error handling.
+
+         Args:
+             inputs (dict): A dictionary with input data for the task.
+@@ -15,30 +15,80 @@ class TaskAgent(AgentSystem):
+                 - prediction (str): The prediction made by the agent.
+                 - new_msg_history (list): A list of messages...
+         """
+-        domain = inputs['domain']
+-        instruction = f"""You are an agent.
++        domain = inputs.get('domain', 'unknown')
++
++        # Enhanced instruction with chain-of-thought reasoning
++        instruction = f"""You are an expert agent solving tasks in the '{domain}' domain.
+
+ Task input:
+ ```
+ {inputs}
+ ```
+
++Please analyze this task carefully and provide your response. Follow these steps:
++1. Understand the task requirements
++2. Consider relevant approaches or solutions
++3. Provide your final answer
++
+ Respond in JSON format with the following schema:
+ <json>
+ {{
+-    "response": ...
++    "reasoning": "Brief explanation of your approach",
++    "response": "Your final answer"
+ }}
+-</json>"""
+-        new_msg_history = chat_with_agent(instruction, ...)
++</json>
++
++Note: The 'response' field is required and should contain your answer."""
++
++        try:
++            new_msg_history = chat_with_agent(
++                instruction,
++                model=self.model,
++                msg_history=[],
++                logging=self.log
++            )
++        except Exception as e:
++            self.log(f"Error in chat_with_agent: {e}")
++            return "Error: Failed to get response from agent", []
+
+-        # Extract the response
++        # Extract the response with improved error handling
+         prediction = "None"
+         try:
+-            extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
+-            if extracted_jsons is not None and "response" in extracted_jsons[-1]:
+-                prediction = extracted_jsons[-1]['response']
++            if new_msg_history and len(new_msg_history) > 0:
++                last_message = new_msg_history[-1].get('text', '')
++                extracted_jsons = extract_jsons(last_message)
++
++                if extracted_jsons is not None and len(extracted_jsons) > 0:
++                    last_json = extracted_jsons[-1]
++
++                    if "response" in last_json:
++                        prediction = last_json['response']
++                        if "reasoning" in last_json:
++                            self.log(f"Agent reasoning: {last_json['reasoning']}")
++                    else:
++                        self.log("Warning: JSON response missing 'response' field")
++                        prediction = str(last_json)
++                else:
++                    self.log("Warning: No valid JSON found in response")
++                    prediction = last_message[:500]
+         except Exception as e:
+             self.log(f"Error extracting prediction: {e}")
+-            prediction = "None"
++            # Attempt to recover with raw response
++            try:
++                if new_msg_history and len(new_msg_history) > 0:
++                    prediction = new_msg_history[-1].get('text', 'Error')[:500]
++            except:
++                prediction = "Error: Complete extraction failure"
+
+         return prediction, new_msg_history
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -17,8 +17,35 @@ class TaskAgent(AgentSystem):
+         """
+         domain = inputs.get('domain', 'unknown')
+
+-        # Enhanced instruction with chain-of-thought reasoning
+-        instruction = f"""You are an expert agent solving tasks...
++        # Domain-specific instructions
++        if domain == 'paper_review':
++            paper_text = inputs.get('paper_text', '')
++            instruction = f"""You are an expert reviewer evaluating academic papers.
++Your task is to decide whether to ACCEPT or REJECT the paper.
++
++Paper to review:
++```
++{paper_text}
++```
++
++Evaluate the paper based on:
++1. Novelty and originality of the research
++2. Technical soundness and methodology
++3. Experimental validation and results
++4. Clarity of presentation
++5. Significance of contributions
++
++Provide your decision in JSON format:
++<json>
++{{
++    "reasoning": "Brief explanation of your decision (2-3 sentences)",
++    "response": "accept or reject"
++}}
++</json>
++
++IMPORTANT: The 'response' field must be EXACTLY either 'accept' or 'reject'
++(lowercase, one word only)."""
++        else:
++            # Generic instruction for other domains
++            instruction = f"""You are an expert agent solving tasks in the '{domain}' domain.
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -20,24 +20,43 @@ class TaskAgent(AgentSystem):
+         # Domain-specific instructions
+         if domain == 'paper_review':
+             paper_text = inputs.get('paper_text', '')
+-            instruction = f"""You are an expert reviewer evaluating academic papers...
++            instruction = f"""You are a rigorous and critical academic reviewer
++evaluating papers for a top-tier conference. Your task is to decide whether to
++ACCEPT or REJECT the paper. Be skeptical and thorough.
+
+ Paper to review:
+ ```
+ {paper_text}
+ ```
+
+-Evaluate the paper based on:
+-1. Novelty and originality of the research
+-...
++Evaluate the paper critically based on:
++1. **Novelty and Originality**: Is the contribution truly novel or incremental?
++2. **Technical Soundness**: Are methods rigorous? Any flaws in theory?
++3. **Experimental Validation**: Comprehensive? Sufficient baselines?
++4. **Clarity and Presentation**: Is writing clear? Key details missing?
++5. **Significance**: Does this advance the field meaningfully?
++
++**RED FLAGS that typically warrant REJECTION:**
++- Incremental improvements without significant novelty
++- Missing critical experimental comparisons or baselines
++- Unclear methodology or missing implementation details
++- Overclaimed contributions not supported by evidence
++- Poor writing that obscures understanding
++- Limited experimental validation or weak results
++- Lack of theoretical justification or soundness issues
++- Insufficient comparison with prior state-of-the-art
++
++**Standards for ACCEPTANCE:**
++- Clear novel contribution that advances the field
++- Rigorous methodology with sound theoretical foundation
++- Comprehensive experiments with strong results
++- Well-written with clear explanations
++- Properly compared against relevant baselines
++
++**Be Critical**: Default to REJECT unless the paper clearly meets high standards.
+
+ Provide your decision in JSON format:
+ <json>
+ {{
+-    "reasoning": "Brief explanation of your decision (2-3 sentences)",
++    "reasoning": "Brief critical analysis (2-3 sentences on key strengths/weaknesses)",
+     "response": "accept or reject"
+ }}
+ </json>
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -20,43 +20,63 @@ class TaskAgent(AgentSystem):
+         # Domain-specific instructions
+         if domain == 'paper_review':
+             paper_text = inputs.get('paper_text', '')
+-            instruction = f"""You are a rigorous and critical academic reviewer...
++            instruction = f"""You are a critical academic reviewer for a top-tier
++conference. Use a two-stage evaluation process:
+
+ Paper to review:
+ ```
+ {paper_text}
+ ```
+
+-Evaluate the paper critically based on:
+-1. **Novelty and Originality**: Is the contribution truly novel?
+-...
+-
+-**RED FLAGS that typically warrant REJECTION:**
+-...
+-
+-**Standards for ACCEPTANCE:**
+-...
+-
+-**Be Critical**: Default to REJECT unless the paper clearly meets high standards.
+-
+-Provide your decision in JSON format:
++**STAGE 1: Identify Weaknesses**
++Systematically check for these common issues:
++
++1. **Novelty Issues:**
++   - Is this just an incremental modification of existing work?
++   - Are the contributions overclaimed or trivial?
++
++2. **Methodological Flaws:**
++   - Are key implementation details missing?
++   - Are there questionable assumptions or theoretical gaps?
++
++3. **Experimental Weaknesses:**
++   - Missing important baselines or comparisons?
++   - Weak or marginal improvements?
++
++4. **Presentation Problems:**
++   - Unclear writing or poor organization?
++   - Missing critical details for reproducibility?
++
++5. **Limited Scope:**
++   - Tested only on toy problems?
++   - Narrow applicability?
++
++**STAGE 2: Make Decision**
++A paper should be **REJECTED** if:
++- It has 2 or more significant weaknesses from Stage 1
++- It has 1 critical flaw
++- The contribution is too incremental
++
++A paper should be **ACCEPTED** only if:
++- It has clear novel contributions
++- Strong experimental validation
++- Well-written and technically sound
++- At most minor, fixable issues
++
++**Critical Mindset:** Most papers have significant flaws.
++About 50% of papers should be rejected.
++
++Provide your evaluation in JSON format:
+ <json>
+ {{
+-    "reasoning": "Brief critical analysis (2-3 sentences)",
++    "weaknesses_found": "List 2-3 main weaknesses identified in Stage 1",
++    "reasoning": "Based on the weaknesses, explain why you accept or reject",
+     "response": "accept or reject"
+ }}
+ </json>
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -20,68 +20,71 @@ class TaskAgent(AgentSystem):
+         # Domain-specific instructions
+         if domain == 'paper_review':
+             paper_text = inputs.get('paper_text', '')
+-            instruction = f"""You are a critical academic reviewer...
+-
+-**STAGE 1: Identify Weaknesses**
+-...
++            instruction = f"""You are a rigorous peer reviewer for a top-tier
++academic conference. Your reputation depends on making careful, balanced decisions.
+
+-**STAGE 2: Make Decision**
+-...
+-
+-Provide your evaluation in JSON format:
+-<json>
+-{{
+-    "weaknesses_found": "List 2-3 main weaknesses identified in Stage 1",
+-    "reasoning": "Based on the weaknesses, explain why you accept or reject",
+-    "response": "accept or reject"
+-}}
+-</json>
+-
+-IMPORTANT: The 'response' field must be EXACTLY either 'accept' or 'reject'..."""
++**Paper to Review:**
++{paper_text}
+
++**Evaluation Framework:**
+
++**ACCEPTANCE CRITERIA (ALL must be satisfied):**
++1. **Novelty**: Presents genuinely new ideas, not incremental improvements
++2. **Technical Soundness**: Methodology is rigorous, correct, and well-justified
++3. **Significance**: Makes important contributions that advance the field
++4. **Experimental Validation**: Claims thoroughly supported with comprehensive experiments
++5. **Clarity**: Clear, well-organized presentation with proper motivation
++6. **Reproducibility**: Sufficient detail for replication
++7. **Related Work**: Proper comparison with existing methods
+
++**REJECTION CRITERIA (ANY one can warrant rejection):**
++- Lacks novelty; merely combines existing techniques without insight
++- Methodological flaws or incorrect technical approach
++- Insufficient experimental validation or cherry-picked results
++- Missing critical baselines or unfair comparisons
++- Overclaimed contributions not supported by evidence
++- Poor writing quality that obscures technical content
++- Ethical concerns or reproducibility issues
++- Limited scope or significance
+
++**Decision Guidelines:**
++- **ACCEPT**: Paper clearly satisfies ALL acceptance criteria with strong evidence
++- **REJECT**: Paper fails one or more acceptance criteria OR matches rejection criteria
++- **When in doubt, err on the side of rejection**
+
++**Your Review Process:**
++1. Identify the paper's main claims and contributions
++2. Evaluate each acceptance criterion systematically
++3. Check for rejection criteria
++4. Ask: "Does this paper significantly advance the field?"
++5. Make a decision based on evidence, not superficial features
+
++**Response Format:**
++Provide your decision in this exact JSON format:
++<json>
++{{
++    "response": "accept"
++}}
++</json>
+
++OR
+
++<json>
++{{
++    "response": "reject"
++}}
++</json>
+
++**CRITICAL REQUIREMENTS:**
++- The "response" field must contain ONLY "accept" or "reject" (lowercase)
++- Be thorough and critical - rejecting weak papers maintains scientific standards
++- Your decision should be defensible based on the criteria above
++- ONLY output the single word: "accept" or "reject" """
+\end{lstlisting}

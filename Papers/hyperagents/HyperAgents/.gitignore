@@ -1,0 +1,28 @@
+.vscode/
+.DS_Store
+CLAUDE.md
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex*
+*.toc
+*.tdo
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*.run.xml
+*.bcf
+*.ptc
+
+# Compiled PDFs (but NOT figure PDFs — those are needed by Overleaf)
+*.pdf
+!figures/*.pdf
+!assets/*.pdf

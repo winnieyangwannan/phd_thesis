@@ -1,0 +1,2528 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{iclr2026_conference,times}
+
+% Optional math commands from https://github.com/goodfeli/dlbook_notation.
+\input{math_commands.tex}
+
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{placeins}   % gives us \FloatBarrier
+\usepackage{graphicx}     % for \includegraphics
+\usepackage{amsmath}     
+\usepackage{subfigure}
+\usepackage{tabularx,ragged2e}
+\usepackage[capitalize,noabbrev]{cleveref} % reference
+% For theorems and such
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{amsthm}
+\graphicspath{{figures/}}
+\usepackage{makecell} % add in preamble
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{float} % in the preamble
+\usepackage{tcolorbox}
+\usepackage{hyperref} % for table of contents click to the corresponding section
+% \hypersetup{
+%     colorlinks=true,
+%     linkcolor=black,
+%     % filecolor=magenta,      
+%     urlcolor=cyan,
+%     pdftitle={Your Document Title},
+%     % pdfpagemode=FullScreen,
+% }
+
+   
+% text color
+\definecolor{KnownGreen}{RGB}{96,188,173}
+\definecolor{UnknownRed}{RGB}{220,107,134}
+\newcommand{\known}[1]{\textcolor{KnownGreen}{#1}}
+\newcommand{\unknown}[1]{\textcolor{UnknownRed}{#1}}
+
+% Optional: slightly tighter line numbers and spacing
+\algrenewcommand\alglinenumber[1]{\scriptsize #1}
+\algnewcommand{\LineComment}[1]{\State \(\triangleright\) #1} % free-standing comment line
+
+
+% \usepackage{titlesec}
+% \titlespacing*{\section}{0pt}{8pt}{4pt}
+
+% Spacing adjustments
+% \setlength{\textfloatsep}{10pt plus 1.0pt minus 1.0pt} % Distance between figure and text
+
+\title{%
+  % ↓ Shift the logo down by  its height so it aligns with the middle of the text
+  \raisebox{-0.40\height}{\includegraphics[height=3.0em]{figures/logo_purple.png}}%
+  \hspace{0.2em}%        ↑ tweak this to change the horizontal gap
+  % Put the two lines into one centred block
+  \parbox[c]{0.85\linewidth}{
+    Hallucination Reduction with CASAL: \\
+    Contrastive Activation Steering for Amortized Learning
+    }%
+}
+
+%%%%%%%%%%%%%%%%% for beautiful text box for output examples in appendis %%%%%%%%%%%%%
+% \usepackage[utf8]{inputenc}
+% \usepackage[margin=1in]{geometry}
+\usepackage{fontawesome5}
+\usepackage{times}
+% Define colors
+\definecolor{lightblue}{RGB}{173, 216, 230}
+\definecolor{darkgray}{RGB}{64, 64, 64}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Authors must not appear in the submitted version. They should be hidden
+% as long as the \iclrfinalcopy macro remains commented out below.
+% Non-anonymous submissions will be rejected without review.
+
+\author{\normalfont Wannan (Winnie) Yang$^{*,1,2}$, Xinchi Qiu$^3$, Lei (Jade) Yu$^1$, Yuchen Zhang$^1$, Aobo Yang$^3$, \\
+Narine Kokhlikyan$^1$, Nicola Cancedda$^1$, Diego Garcia-Olano$^1$ \\
+$^1$Meta Superintelligence Labs \quad $^2$New York University \quad $^3$Meta \\
+$^*$Work done at Meta \\
+}
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\iclrfinalcopy % Uncomment for camera-ready version, but NOT for submission.
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+
+Large Language Models (LLMs) exhibit impressive capabilities but often hallucinate, confidently providing incorrect answers instead of admitting ignorance. Prior work has shown that models encode linear representations of their own knowledge and that activation steering can reduce hallucinations. These approaches, however, require real-time monitoring and intervention during inference. We introduce \textbf{C}ontrastive \textbf{A}ctivation \textbf{S}teering for \textbf{A}mortized \textbf{L}earning (CASAL), an efficient algorithm that connects interpretability with amortized optimization. CASAL directly bakes the benefits of activation steering into model's weights during training. Once trained, LLMs answer questions they know while abstaining from answering those they do not. CASAL's light-weight design requires training only a sub-module of a single transformer layer and yet reduces hallucination by $\sim 30\%$ - $40 \%$ across multiple short-form QA benchmarks. CASAL is $\sim$ 30x more compute-efficient and $\sim$ 20x more data-efficient than strong LoRA-based baselines such as SFT, DPO and GRPO, boosting its practical applicability in data scarce domains. Importantly, CASAL also generalizes effectively to out-of-distribution (OOD) domains. We showcase CASAL's flexibility in mitigating hallucinations in both text-only and vision-language models. To our knowledge, CASAL is the first steering-based training method that has been shown to be effective for both dense and Mixture-of-Experts (MoE) architectures. CASAL represents a significant step forward for applying interpretability-inspired method for scalable and broad deployment in production systems \footnote{\url{https://github.com/facebookresearch/CASAL}}. 
+\end{abstract}
+
+
+
+\section{Introduction}
+
+Large Language Models (LLMs) have demonstrated near-human or even superhuman intellectual capabilities \citep{brown2020languagemodelsfewshotlearners,ouyang2022traininglanguagemodelsfollow, openai2024gpt4technicalreport}. Yet despite these successes, they sometimes fail in striking ways. A central failure mode is hallucination: the tendency to confidently generate false or unsupported information. Hallucinations undermine trust and restrict the safe deployment of LLMs in real-world settings where factual reliability is critical \citep{rawte2023survey, gekhman2024does, shen2025don}.
+
+Recent interpretability studies—using sparse autoencoder (SAE) features \citep{templeton2024SAEsteering} or residual stream activations \citep{contrastive_activation_addition, turner2024steering}—have revealed that LLMs encode a form of self-knowledge. Specifically, the activations associated with known versus unknown knowledge can be separated along linear directions \citep{calibratinguncertaintylinear, ferrando2025entity}. Moreover, steering these representations reduces overconfidence and enables models to acknowledge uncertainty. However, prior work primarily focuses on inference-time interventions , leaving a significant gap in their practicality as part of scalable alignment pipelines.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/fig1_new.png}
+    \caption{\textbf{Overview of the CASAL algorithm.} 
+                (A) \textbf{Knowledge Probing}: CASAL starts by probing the model to figure out what it knows vs doesn't know. Multiple responses per query are sampled to classify queries as \textbf{\known{known}} (\known{$\mathbf{\mathcal{D}_{k}}$}) or \textbf{\unknown{unknown}} ( \unknown{$\mathbf{\mathcal{D}_{u}}$}).  
+                (B) \textbf{Steering}: Difference in means are computed to construct steering vectors (\unknown{$\mathbf{v}^{L^*}_{u}$} and \known{$\mathbf{v}^{L^*}_{k}$}). Target activations ( $\unknown{\mathbf{t}^{L^{*}}_{u}}$ and  $\known{\mathbf{t}^{L^{*}}_{k}}$) are obtained by adding these steering vectors to the residual stream activation.  
+                \textbf{Pre-CASAL Behavior}: Prior to training, the model often hallucinates and produces incorrect answers for \textbf{\unknown{unknown}} queries.  
+                (C) \textbf{CASAL Training}:  CASAL training is essentially "amortized activation steering", where instead of repeatedly steering activations online, we train a small subnetwork (a single layer NN) to approximate the steering solution offline.
+                (D) \textbf{Post-CASAL Activations and Behavior}: After training, the model learns a sharper representation with a clearer knowledge boundary. It maintains correct answers on \textbf{\known{known}} queries while abstaining from answering \textbf{\unknown{unknown}} ones.}
+\label{fig:casal}
+\end{figure}
+
+If LLMs' internal states already reflect what is known versus unknown, why do they still produce confident but false answers? We hypothesize that a key cause lies in the training and evaluation paradigm of LLMs \citep{knowledgeboundarysurvey, openai2025whyhallucinate}. During pretraining, the language modeling objective rewards predicting the next token given the training corpus distribution, incentivizing plausible continuations even under uncertainty rather than expressions of ignorance. Post-training further amplifies this tendency: the training and evaluation framework optimizes models to be good test-takers, rewarding guessing over acknowledging uncertainty \citep{gekhman2024doesfinetuningllmsnew}.
+
+In this work, we propose an alternative training objective—one that leverages the model's own internal representations to align behavior with knowledge boundaries. Our core hypothesis is that if models are trained to\textbf{ directly utilize their own representations} of known and unknown, their generations will better reflect what they truly "know". Concretely, we replace the standard cross-entropy loss with a local representation loss applied to residual stream activations. Whereas cross-entropy loss provides a learning signal from \textit{external} supervision (the training corpus), representation loss provides a learning signal from \textit{within}: model's own hidden representation. 
+
+Importantly, CASAL is among the first approaches to \emph{rely solely on a representation-level objective} for training LLMs. Prior studies such as RepE \citep{zou2025representationengineering}, ReFAT \citep{yu2024refat}, and others \citep{yu2024mechanistic, ablationfinetuning, chen2025personavectors, representationbending} have explored representation-level fine-tuning, but all employed representation losses as auxiliary signals alongside standard cross entropy loss. By contrast, \textbf{CASAL treats representation loss as the only and the primary optimization objective}, directly teaching the model to utilize its hidden representation.
+
+Our approach connects insights from two fields: interpretability and amortized optimization. Amortized optimization \citep{kingma2013auto, rezende2014stochastic, gershman2014amortized} is a paradigm where costly repeated optimizations are replaced by training a parametric function that approximates the solution. CASAL instantiates this idea by incorporating activation steering into training: \textbf{it "amortize" the activation steering process by training a lightweight subnetwork} that learns to approximate the steering solution, embedding the knowledge boundary directly into the model's weights.
+
+We highlight our main contributions as:
+
+\begin{itemize}
+\item \textbf{Effective Algorithm}: Introducing a training method inspired by interpretability findings and amortized optimization. CASAL enables models to admit ignorance for unknown questions, reducing hallucination rates by $\sim 30\%$ - $40\%$ across multiple short-form QA benchmarks.
+
+\item \textbf{Efficiency Gains}: CASAL's objective function enables local and lightweight parameter updates, delivering \textbf{$\sim$ 30x higher compute efficiency (FLOPs per token)} and requires \textbf{$\sim$20x less training data} (with as little as $\sim 640$ training data) to achieve the same level of performance compared to LoRA-based SFT and DPO.
+
+\item \textbf{Robust Generalization}: The trained model retains its general capabilities while avoiding excessive refusals. At the same time, it successfully generalizes refusal behavior to unknown queries sampled from out-of-distribution (OOD) data.
+
+\item \textbf{Versatility}: CASAL training is modality-agnostic, effectively mitigating hallucination in both text-only and {\bfseries multimodal models}.
+
+\item \textbf{Broad Applicability}: We present \textit{the first} ever steering-based training framework with \textit{general} applicability to both {\bfseries dense and Mixture-of-Experts (MoE) models.}
+\end{itemize}
+
+\begin{algorithm}[t]
+\caption{CASAL: Contrastive Activation Steering for Amortized Learning}
+\label{alg:casal}
+\begin{algorithmic}[1]
+\Require Dataset $\mathcal{D}$; frozen model $M_\text{original}$ with $l$ layers; target layer $L^*$; steering strength $\alpha$; training epochs $E$
+
+\Statex
+\Statex \textbf{STEP 1: Knowledge boundary probing \quad \known{known} / \unknown{unknown}}
+\State Set $k=10$, threshold $\tau=7$
+\For{$x \in \mathcal{D}$}
+  \State Sample $k$ responses $\{y^{(i)}(x)\}$; $s(x)=\sum_i \mathbf{1}[y^{(i)}(x)\text{ correct}]$
+  \If{$s(x) \ge \tau$} $\mathcal{D}_{\mathrm{k}} \gets \mathcal{D}_{\mathrm{k}} \cup \{x\}$ \Comment{\known{"known" set $\mathcal{D}_{\mathrm{k}}$}}
+  \ElsIf{$k-s(x) \ge \tau$} $\mathcal{D}_{\mathrm{u}} \gets \mathcal{D}_{\mathrm{u}} \cup \{x\}$ \Comment{\unknown{"unknown" set $\mathcal{D}_{\mathrm{u}}$}}
+  \EndIf
+\EndFor
+
+\Statex
+\Statex \textbf{STEP 2: Steering}
+\Statex \textit{Note:} $\mathbf{a}^{L^*}(x)$ denotes residual activations at layer $L^*$ for input $x$
+\State $\mathbf{\bar{a}}^{L^*}_{\mathrm{u}}=\frac{1}{|\mathcal{D}_{\mathrm{u}}|}\sum_{x \in \mathcal{D}_{\mathrm{u}}}\mathbf{a}^{L^*}(x), \quad
+           \mathbf{\bar{a}}^{L^*}_{\mathrm{k}}=\frac{1}{|\mathcal{D}_{\mathrm{k}}|}\sum_{x \in \mathcal{D}_{\mathrm{k}}}\mathbf{a}^{L^*}(x)$ \Comment{mean activations}
+           
+\State $\mathbf{v}^{L^*}_{\mathrm{u}}=\mathbf{\bar{a}}^{L^*}_{\mathrm{u}}-\mathbf{\bar{a}}^{L^*}_{\mathrm{k}}, \quad
+\mathbf{v}^{L^*}_{\mathrm{k}}=\mathbf{\bar{a}}^{L^*}_{\mathrm{k}}-\mathbf{\bar{a}}^{L^*}_{\mathrm{u}}$ \Comment{steering vectors}
+
+\State $\mathbf{t}^{L^*}_{\mathrm{u}}(x)=\mathbf{a}^{L^*}(x)+ \alpha \cdot \mathbf{v}^{L^*}_{\mathrm{u}}$ for $x \in \mathcal{D}_{\mathrm{u}}$ \Comment{\unknown{"abstain when you don't know"}}
+\State $\mathbf{t}^{L^*}_{\mathrm{k}}(x)=\mathbf{a}^{L^*}(x)+ \alpha \cdot \mathbf{v}^{L^*}_{\mathrm{k}}$ for $x \in \mathcal{D}_{\mathrm{k}}$ \Comment{\known{"answer when you know"}}
+
+\Statex
+\Statex \textbf{STEP 3: CASAL training}
+\State Initialize one-layer network $M_\text{train}$ with weight $W^{L^*}_{\text{original}}$ \Comment{one-layer fine-tuning}
+\For{$e=1 \dots E$}
+  \State $\mathcal{L}_{\mathrm{u}}=\mathbb{E}_{x\in\mathcal{D}_{\mathrm{u}}}\|\mathbf{t}^{L^*}_{\mathrm{u}}(x)-\mathbf{a}^{L^*}(x)\|^2$ \Comment{\unknown{"unknown" loss}}
+  \State $\mathcal{L}_{\mathrm{k}}=\mathbb{E}_{x\in\mathcal{D}_{\mathrm{k}}}\|\mathbf{t}^{L^*}_{\mathrm{k}}(x)-\mathbf{a}^{L^*}(x)\|^2$ \Comment{\known{"known" loss}}
+  \State $\mathcal{L} \gets \mathcal{L}_{\mathrm{u}}+\mathcal{L}_{\mathrm{k}}$; update $M_\text{train}$ weights by $\nabla\mathcal{L}$
+\EndFor
+\State $W^{L^*}_{\text{CASAL}} \gets$ trained weights from $M_\text{train}$ \Comment{extract trained weights}
+\State $M_{\text{CASAL}} \gets M_{\text{original}}$ with $W^{L^*}_{\text{original}}$ replaced by $W^{L^*}_{\text{CASAL}}$ at layer $L^*$ \Comment{create output model}
+
+\Ensure Trained model $M_{\text{CASAL}}$ with updated weights at layer $L^*$
+
+\end{algorithmic}
+\end{algorithm}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/fig2.png}
+    \caption{\textbf{CASAL is both sample efficient and compute efficient.}
+    (A--B) CASAL achieves strong hallucination reduction with orders-of-magnitude fewer training examples comparing to LoRA-based fine-tuning with SFT, DPO and GRPO. 
+    (C) CASAL is over $30\times$ more compute-efficient than PEFT baselines such as LoRA. 
+    (D) Hallucination reduction after CASAL training correlates with improved cluster separation between known and unknown queries, measured by silhouette score.
+   }
+    \label{fig:efficient}
+\end{figure}
+
+\section{CASAL}
+
+We now introduce our method, CASAL, which integrates insights from interpretability and amortized optimization to build a lightweight, efficient training framework. The full pipeline is shown in Figure~\ref{fig:casal}, summarized in Algorithm~\ref{alg:casal}. At a high level, CASAL can be understood as an instance of \emph{amortized optimization}: instead of repeatedly solving the steering problem at inference time, we train a parametric subnetwork to approximate this solution once, thereby "amortizing" the resource use of activation steering across all future queries. This perspective motivates the name: \textbf{C}ontrastive \textbf{A}ctivation \textbf{S}teering for \textbf{A}mortized \textbf{L}earning (CASAL). CASAL  proceeds in three stages:
+
+\subsection{ STEP 1: Knowledge Boundary Probing}
+CASAL begins by probing the model to delineate its knowledge boundary. For each input $x \in \mathcal{D}$, we sample $k=10$ completions and compare them to ground-truth answers. For each question, if at least 7 generations are correct, $x$ is labeled as \known{known}; if less than 3 are incorrect, it is labeled as \unknown{unknown}. This produces two subsets: \known{$\mathcal{D}_{k}$} and \unknown{$\mathcal{D}_{u}$}. We systematically evaluated different threshold values and found that hallucination reduction performance remains robust across this range (Appendix \ref{app:probing}). We adopt a relatively strict threshold of $\tau=7$ to ensure high-confidence separation: the model abstains only on knowledge it does not possess, and responds only when it demonstrates consistent correctness. This choice reduces ambiguous cases near the decision boundary. \footnote{Consistent with previous literature \citep{ferrando2025entity, grattafiori2024llama3herdmodels}, the knowledge probing step creates the known versus unknown labels subsequently used for steering our training baseline methods such as SFT and DPO, and therefore does not introduce additional computational cost specific to CASAL.} We evaluate CASAL on three datasets: TriviaQA \citep{triviaqa}, PopQA \citep{popqa}, and EntityQA \citep{ferrando2025entity}. Dataset details provided in Appendix \ref{app: dataset}.
+
+
+\subsection{STEP 2: Steering}
+Next, CASAL constructs contrastive steering vectors to obtain better knowledge boundaries \citep{contrastive_activation_addition, turner2024steering, arditi2024refusal}. For each query $x$, we extract residual stream activations $\mathbf{a}^{L^{*}}(x)$ at a designated target layer $L^{*}$ from \textit{the last token position of the question}\footnote{By extracting activations from the last token position of the \textit{question}, the steering vectors reflect properties of the question itself (whether it is known or unknown to the model) rather than features of the \textit{answer} (whether the answer is correct or incorrect).}. We then compute mean activations for \known{known} and \unknown{unknown} subsets ($\known{\bar{a}^{L^*}_{\mathrm{k}}}$ and $\unknown{\bar{a}^{L^*}_{\mathrm{u}}}$) and construct steering vectors by taking difference in means, resulting in two vectors: \unknown{$\mathbf{v}^{L^{*}}_{u}$} for abstaining when the model lacks knowledge, and \known{$\mathbf{v}^{L^{*}}_{k}$} for reinforcing correct answering when the model does know. The steering vectors are then added to the residual stream activations, yielding target activations \unknown{$\mathbf{t}^{L^{*}}_{u}$} and \known{$\mathbf{t}^{L^{*}}_{k}$}. These target activations are cached and subsequently used to compute the representation loss in STEP 3. Further details for steering and target layer selection procedures are included in Appendix \ref{app:steering}.
+
+\subsection{STEP 3: CASAL Training}
+ 
+Finally, CASAL trains a lightweight \textbf{one-layer network} $M_\text{train}$, initialized with the weight $W^{L^{*}}_{\text{original}}$ from layer $L^{*}$ of the original model. Using a mean squared error objective, CASAL minimizes the distance between current activation $\mathbf{a}^{L^{*}}(x)$ and its corresponding target activation (\known{$\mathbf{t}^{L^{*}}_{k}$} or \unknown{$\mathbf{t}^{L^{*}}_{u}$}). After training, the learned weights $W^{L^*}_{\text{CASAL}}$ are extracted from $M_\text{train}$ and substituted back into layer $L^*$ of the original model, producing the final model $M_{\text{CASAL}}$. This process embeds the knowledge boundary directly into the model weights, eliminating the need for repeated steering at inference. \textbf{Importantly, this representation loss is the sole training objective}, not used as auxiliary loss with standard cross-entropy. Because this loss is \textbf{local to layer $L^*$} (derived directly from residual activations at that layer), we only need to train one single layer. This contrasts with cross-entropy loss, which requires a forward pass through all layers to compute output probabilities. Even when updating only a single target layer with cross-entropy loss, the entire model (with other layers frozen) must be deployed during the forward pass, adding much more computational cost compared to training just the one-layer network $M_\text{train}$.  We conducted systematic ablation studies (Appendix \ref{app:ablation}) to examine different fine-tuning strategies. Our results demonstrate that fine-tuning different submodules of the MLP layer yields no statistically significant performance differences. Further details for the training process and hyperparameter research are included in Appendix~\ref{app:casal_training} and \ref{app:hyper}.
+
+\section{CASAL is Effective and Efficient}
+
+We evaluate CASAL against strong baselines including Supervised Fine-Tuning (SFT), Direct Preference Optimization (DPO) and  Group Relative Policy Optimization (GRPO), which represent the predominant fine-tuning approaches deployed in production systems today (hyperparameters search and other training details are provided in Appendix \ref{app:baseline}). By demonstrating CASAL's superiority over these widely-adopted techniques, we establish its practical applicability for real-world deployment beyond toy settings. 
+
+\subsection{Sample Efficiency}
+We quantify hallucination reduction performance primarily using the \emph{hallucination rate}, which captures the fraction of unknown queries incorrectly attempted by the model. Figure~\ref{fig:efficient} summarizes our key findings, with additional details on the hallucination rate metric provided in Appendix~\ref{app:hallucination_rate}.
+CASAL achieves substantially lower hallucination rates across a wide range of training set sizes. When trained on just $640$ examples, CASAL already matches or surpasses the performance of SFT, DPO and GRPO trained on $12{,}800$ examples (Figure~\ref{fig:efficient}A–B). This translates into more than \textbf{20$\times$ higher data efficiency}, demonstrating that CASAL is especially practical in data-scarce settings.
+
+\subsection{Compute Efficiency}
+Beyond sample efficiency, CASAL is also highly compute efficient. By updating only a lightweight sub-module within a single transformer layer, CASAL is substantially more compute efficient than full fine-tuning or even LoRA-based parameter-efficient fine-tuning (PEFT). As shown in Figure~\ref{fig:efficient}C, CASAL achieves lower hallucination rates while requiring over \textbf{30$\times$ fewer FLOPs per token} than LoRA during training, underscoring its practicality for large-scale deployments.This efficiency stems from two key properties of CASAL's loss function:
+
+\textbf{Efficiency across model depth.} Because CASAL's loss is local to layer $L^*$, both forward and backward passes operate exclusively within the single-layer network $M_\text{train}$. In contrast, methods using cross-entropy loss, even when updating only a single layer with other layers frozen, must perform a forward pass through all layers end-to-end to compute output probabilities and backpropagate gradients from the output back to the target layer. For example, when fine-tuning layer 16 of a 32-layer model, cross-entropy-based methods require computations through 32 layers in the forward pass and through 16 layers in the backward pass, while CASAL operates only on the target layer itself. This advantage scales with model depth: the deeper the model, the greater CASAL's computational savings.
+
+\textbf{Efficiency across generation length.} CASAL computes loss at a single position—the last token of the question. In contrast, SFT averages cross-entropy loss over \textit{all tokens} in the generated answer, while DPO computes log-probabilities over \textit{all tokens} in both chosen and rejected responses. The computational cost thus scales with answer length for these methods, whereas CASAL's cost remains constant regardless of generation length. Longer answers make CASAL increasingly cost-effective comparing to standard baselines.\footnote{The FLOPs comparison reported in this work is measured \textit{per token}. This makes our estimate of CASAL's computational advantage (30$\times$ fewer FLOPs than LoRA) conservative. For tasks requiring longer generations, CASAL's efficiency gains over SFT, DPO and GRPO would be substantially greater.} Details of FLOPs calculations are included in Appendix~\ref{app:flops}. 
+
+
+\subsection{Learning Better Knowledge Boundaries}
+
+By training with a local representation loss, CASAL encourages clearer separation between activations corresponding to known and unknown queries. We compute Silhouette score as a measure of cluster separation. As shown in Figure~\ref{fig:efficient}D, Silhouette scores (~\ref{app:silhouette}). increase as training progresses, and this separation is correlated with the reduction in hallucination rate. The strong correspondence (logistic fit, $R^2 = 0.945$) between representational separation and behavioral outcomes indicates that CASAL's effectiveness arises from more faithfully encoding and utilizing knowledge boundaries. Consistent with our hypothesis, CASAL demonstrates the best cluster separation and the clearest boundary between known and unknown queries compared to the other methods ( Figure~\ref{fig:pca_all}, Appendix \ref{app:pca}). This validates that by directly training a local representation loss, CASAL effectively encourages a distinct separation between these activation states.
+
+
+
+\begin{table}[htbp]
+\centering
+\scriptsize
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l c c c c c c}
+\toprule
+\textbf{Methods} &
+\multicolumn{3}{c}{\textbf{Refusal Rate (}$\downarrow$\textbf{)}} &
+\multicolumn{3}{c}{\textbf{Accuracy (}$\uparrow$\textbf{)}} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+& \textbf{PopQA} & \textbf{TriviaQA} & \textbf{EntityQA} 
+& \textbf{PopQA} & \textbf{TriviaQA} & \textbf{EntityQA} \\
+\midrule
+Baseline & \textbf{18.19\%$\pm$3.01} & 7.93\%$\pm$1.14 & 8.94\%$\pm$2.18
+         & \textbf{91.08\%$\pm$2.23} & \textbf{95.82\%$\pm$2.24} & 88.59\%$\pm$1.46 \\
+\midrule\midrule
+SFT      & 20.32\%$\pm$1.09 & 10.01\%$\pm$1.16 & 11.08\%$\pm$1.24
+         & 82.89\%$\pm$1.33 & 92.45\%$\pm$1.29 & 85.75\%$\pm$1.18 \\
+DPO      & 21.79\%$\pm$1.11 & 14.37\%$\pm$2.06 & 17.66\%$\pm$2.14 &
+         90.25\%$\pm$1.06 & 95.30\%$\pm$0.96 & 89.84\%$\pm$1.16 \\
+ GRPO      & 17.48\%$\pm$4.46 & 17.77\%$\pm$3.82 & 16.67\%$\pm$4.42 &
+85.78\%$\pm$4.36 & 91.67\%$\pm$2.76 & 85.48\%$\pm$3.52 \\
+CASAL    & 19.89\%$\pm$1.15 & \textbf{7.29\%$\pm$1.34} & \textbf{6.84\%$\pm$1.23} 
+         & 85.11\%$\pm$1.88 & 95.34\%$\pm$2.25 & \textbf{89.90\%$\pm$0.99} \\
+\bottomrule
+\end{tabular}}
+\caption{CASAL does not introduce over-refusal nor degrade performance for \known{known} queries. Refusal rate and accuracy across three different QA datasets are measured.}
+\label{tab:over_refusal}
+\end{table}
+
+
+\begin{table}[htbp]
+\centering
+\small
+% \setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\linewidth}{l *{3}{X} X}
+\toprule
+\textbf{Methods} &
+\multicolumn{3}{c}{\textbf{Accuracy (}$\uparrow$\textbf{)}} &
+\multicolumn{1}{c}{\textbf{Win rate (}$\uparrow$\textbf{)}} \\
+
+\cmidrule(lr){2-4}\cmidrule(lr){5-5}
+& \textbf{MMLU} & \textbf{GSM8K} & \textbf{GPQA} & \textbf{MT Bench} \\
+& \textbf{(General)} & \textbf{(Math)} & \textbf{(Reasoning)} & \textbf{(Coherence)} \\
+\midrule
+Baseline & 68.01 $\pm$ 0.34 & 77.48 $\pm$ 1.15 & \textbf{33.31 $\pm$ 0.34} & 7.38 $\pm$ 0.06 \\
+\midrule\midrule
+SFT      & 67.90 $\pm$ 0.23 & 75.66 $\pm$ 1.18 & 32.82 $\pm$ 0.34 & 7.44 $\pm$ 0.13 \\
+DPO      & 68.03 $\pm$ 0.26 & \textbf{78.16 $\pm$ 1.14} & 31.43 $\pm$ 0.37 & 7.39 $\pm$ 0.15\\
+GRPO      & 67.73 $\pm$ 0.38 & 76.66 $\pm$ 1.21 & 31.92 $\pm$ 0.22 & 7.44 $\pm$ 0.11\\
+CASAL    & \textbf{68.04 $\pm$ 0.44} & 77.02 $\pm$ 1.16 & 33.18 $\pm$ 0.34 & \textbf{7.57$\pm$ 0.08} \\
+\bottomrule
+\end{tabularx}
+\caption{CASAL preserves general capability. Performances (higher is better) on general capability, math, reasoning and context-aware conversational ability in multi-turn dialogues are measured.}
+\label{tab:general_capability}
+\end{table}
+
+
+\section{CASAL Preserves Model Capability}
+An important requirement for any practically useful hallucination-reduction method is that it should not degrade a model's general capabilities nor induce excessive refusals on queries the model can correctly answer. We therefore evaluate CASAL across both refusal behavior and broad capability benchmarks.
+Table~\ref{tab:over_refusal} reports refusal rates on three QA datasets. CASAL achieves the lowest refusal rates on TriviaQA (7.29\%) and EntityQA (6.84\%), while maintaining a competitive rate on PopQA (19.89\%). These results demonstrate that CASAL reduces hallucination on unknown queries without over-penalizing the model into unnecessary refusals for known ones. We also evaluate against Contrastive Activation Addition (CAA), a popular inference-time steering method \citep{contrastive_activation_addition}. As summarized in Section~\ref{app:caa_casal}, while CASAL achieves comparable hallucination rates to CAA on unknown queries, it maintains performance on known queries, whereas CAA degrades accuracy for questions the model could previously answer correctly. This finding aligns with previous work \citep{durmus2024steering, chen2025personavectors} showing that inference-time steering can introduce undesirable side effects.
+
+We further assess models' general capability, including MMLU \citep{mmlu} for general knowledge, GSM8K \citep{gsm8k} for math reasoning, GPQA\citep{gpqa} for scientific reasoning, and MT-Bench \citep{mtbench} for coherence in multi-turn conversations. As shown in Table~\ref{tab:general_capability}, CASAL performs on par with strong baselines across all metrics. Beyond these quantitative measures, we provide raw model outputs in Appendix~\ref{app:examplePoutput} to allow readers to assess the natural flow and coherence of generated responses after CASAL training.
+These results demonstrate that CASAL reduces hallucinations on unknown queries while avoiding over-refusal on known queries, all without sacrificing general capability—a balance critical for practical deployment.
+
+\section{CASAL is OOD Generalizable}
+
+Does CASAL capture a generalizable notion of what the model knows versus does not know beyond its training distribution? We test its ability to generalize across both in-distribution and out-of-distribution (OOD) settings. We first evaluate whether CASAL's learned knowledge boundary transfers across different groups within the same dataset. As shown in Table~\ref{tab:generalization_within}, CASAL trained on Wikipedia-style data generalizes effectively to web data, reducing hallucination rate from 50.7\% to 32.4\% while maintaining high accuracy on known queries (92.0\% vs. 95.8\%). A similar trend is observed on PopQA (Table~\ref{tab:generalization_within}), where CASAL substantially reduces hallucinations in both Group 1 and Group 2, lowering test hallucination rates from 74.4\% to 23.4\%. These results indicate that CASAL does not simply memorize steering directions but learns a transferable notion of known versus unknown knowledge that holds across diverse data groups. 
+
+We next evaluate a stronger OOD setting: training CASAL on one dataset and testing it on a completely different one. Specifically, CASAL is trained on TriviaQA and evaluated on EntityQA (Table~\ref{tab:generalization_across}). Remarkably, hallucination rate on the unseen EntityQA dataset drops from 50.7\% to 11.7\%, while accuracy on known queries remains above 95\%. This demonstrates that CASAL's learned representations extend beyond the training domain, capturing knowledge boundaries that remain robust even under OOD transfer. Together, these results establish that CASAL generalizes well both across sub-groups within a dataset and across entirely distinct datasets. This robustness highlights that CASAL is not merely overfitting to a narrow training distribution but instead induces a broadly applicable mechanism for distinguishing known from unknown queries.
+
+
+
+\begin{table}[t]
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l l c c c c c c}
+\toprule
+\textbf{Dataset} & \textbf{Methods} &
+\multicolumn{2}{c}{\textbf{\unknown{Hallucination Rate (Unknown)} ($\downarrow$)}} &
+\multicolumn{2}{c}{\textbf{\known{Refusal Rate (Known)} ($\downarrow$)}} &
+\multicolumn{2}{c}{\textbf{\known{Accuracy (Known)} ($\uparrow$)}} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+& & \textbf{Train} & \textbf{Test} 
+& \textbf{Train} & \textbf{Test} 
+& \textbf{Train} & \textbf{Test} \\
+\midrule
+\multirow{TriviaQA} 
+& & \textbf{Wiki} & \textbf{Web} 
+& \textbf{Wiki} & \textbf{Web} 
+& \textbf{Wiki} & \textbf{Web} \\
+& Baseline & 48.20\%$\pm$1.34 & 50.74\%$\pm$1.12 & 9.06\%$\pm$0.93 & \textbf{7.93\%$\pm$2.02} & \textbf{94.22\%$\pm$1.44} & \textbf{95.82\%$\pm$1.22} \\ \midrule\midrule
+& SFT  & 24.44\%$\pm$1.65 & 35.44\%$\pm$1.64 & 14.77\%$\pm$1.52 & 15.10\%$\pm$1.77 & 91.23\%$\pm$0.54 & 90.26\%$\pm$1.15 \\
+& DPO  & 23.28\%$\pm$1.02 & 33.77\%$\pm$0.99 & 13.62\%$\pm$1.08 & 16.33\%$\pm$1.19 & 90.23\%$\pm$1.09 & 88.13\%$\pm$1.30 \\
+& GRPO  & 22.33\%$\pm$1.34 & 33.12\%$\pm$1.88 & 15.99\%$\pm$1.30 & 18.10\%$\pm$1.09 & 88.83\%$\pm$0.96 & 87.27\%$\pm$1.03 \\
+& CASAL  & \textbf{20.47\%$\pm$1.11} & \textbf{32.42\%$\pm$1.29} & \textbf{8.28\%$\pm$1.16} & 11.69\%$\pm$2.22 & 92.03\%$\pm$0.82 & 90.08\%$\pm$1.33 \\
+\midrule
+\multirow{PopQA}
+& & \textbf{Group 1} & \textbf{Group 2} 
+& \textbf{Group 1} & \textbf{Group 2} 
+& \textbf{Group 1} & \textbf{Group 2} \\
+& Baseline & 74.87\%$\pm$2.92 & 74.35\%$\pm$1.56 & 18.95\%$\pm$1.39 & \textbf{18.19\%$\pm$1.46} & \textbf{90.84\%$\pm$1.51} & \textbf{91.08\%$\pm$0.92} \\ \midrule\midrule
+& SFT  & 22.77\%$\pm$1.08 & 24.02\%$\pm$1.11 & 14.04\%$\pm$1.16 & 20.88\%$\pm$1.09 & 85.01\%$\pm$1.06 & 85.74\%$\pm$1.60 \\
+& DPO  & 21.08\%$\pm$1.33 & 24.88\%$\pm$0.99 & 14.99\%$\pm$1.62 & 19.19\%$\pm$1.55 & 84.66\%$\pm$0.90 & 84.01\%$\pm$1.11 \\
+& GRPO  & 20.19\%$\pm$1.05 & 24.22\%$\pm$1.32 & 18.07\%$\pm$1.02 & 21.10\%$\pm$1.33 & 80.13\%$\pm$0.31 & 80.98\%$\pm$1.06 \\
+& CASAL  & \textbf{22.48\%$\pm$1.45} & \textbf{23.42\%$\pm$1.94} & \textbf{13.97\%$\pm$1.78} & 19.10\%$\pm$1.30 & 85.23\%$\pm$0.86 & 84.27\%$\pm$1.99 \\
+\bottomrule
+\end{tabular}}
+\caption{CASAL learns a generalizable notion of \known{known} vs. \unknown{unknown}, and can transfer between data sources within TriviaQA and generalize across groups within PopQA.}
+\label{tab:generalization_within}
+\end{table}
+
+
+\begin{table}[t]
+\scriptsize
+\centering
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l c c c c c c}
+\toprule
+\textbf{Methods} &
+\multicolumn{2}{c}{\textbf{\unknown{Hallucination Rate} ($\downarrow$)}} &
+\multicolumn{2}{c}{\textbf{\known{Refusal Rate} ($\downarrow$)}} &
+\multicolumn{2}{c}{\textbf{\known{Accuracy} ($\uparrow$)}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+& \textbf{Train} & \textbf{Test} 
+& \textbf{Train} & \textbf{Test} 
+& \textbf{Train} & \textbf{Test} \\
+\cmidrule(lr){2-2}\cmidrule(lr){3-3}
+\cmidrule(lr){4-4}\cmidrule(lr){5-5}
+\cmidrule(lr){6-6}\cmidrule(lr){7-7}
+& \textbf{TriviaQA} & \textbf{EntityQA} 
+& \textbf{TriviaQA} & \textbf{EntityQA} 
+& \textbf{TriviaQA} & \textbf{EntityQA} \\
+\midrule
+Baseline & 48.2\%$\pm$1.33 & 50.74\%$\pm$0.92 & \textbf{9.06\%$\pm$1.22} & \textbf{12.89\%$\pm$1.49} & \textbf{94.22\%$\pm$0.93} & \textbf{95.82\%$\pm$2.32} \\ \midrule\midrule
+SFT & 30.63\%$\pm$1.53 & 23.13\%$\pm$1.66 & 21.16\%$\pm$1.34 & 29.84\%$\pm$1.40 & 88.80\%$\pm$1.33 & 80.77\%$\pm$1.05 \\
+DPO & 20.63\%$\pm$2.21 & 18.30\%$\pm$1.45 & 13.89\%$\pm$1.22 & 22.02\%$\pm$1.29 & 92.91\%$\pm$1.06 & 87.41\%$\pm$1.22 \\
+GRPO & \textbf{14.00\%$\pm$0.55} & 12.83\%$\pm$4.18 & 21.43\%$\pm$4.10 & 17.25\%$\pm$5.56 & 85.69\%$\pm$8.75 & 85.24\%$\pm$4.32 \\
+CASAL & 18.23\%$\pm$1.03 & \textbf{11.72\%$\pm$1.66} & 9.29\%$\pm$1.48 & 13.82\%$\pm$1.55 & 93.36\%$\pm$1.47 & 95.77\%$\pm$1.64 \\
+\bottomrule
+\end{tabular}}
+\caption{CASAL supports OOD generalization across different datasets. The model is trained on the TriviaQA dataset and tested on EntityQA as an out-of-distribution setting.}
+\label{tab:generalization_across}
+\end{table}
+
+\section{CASAL is Modality and Architecture Agnostic}
+
+
+\begin{table}[t]
+\centering
+% First subtable - WorldCuisines
+\begin{minipage}{0.25\textwidth}
+\includegraphics[width=0.65\linewidth]{figures/cuisine/mille-feuille.jpg}
+\\\textit{What is this dish known as in France?}
+\end{minipage}%
+\begin{minipage}{0.73\textwidth}
+\small
+\begin{tabular}{l c cc}
+\toprule
+\textbf{Methods} &
+\multicolumn{3}{c}{\textbf{WorldCuisines Dataset}} \\
+\cmidrule(lr){2-4}
+&
+\multicolumn{1}{c}{\textbf{\unknown{Unknown}}} &
+\multicolumn{2}{c}{\textbf{\known{Known}}} \\
+\cmidrule(lr){2-2}\cmidrule(lr){3-4}
+& \textbf{Hallucination Rate (}$\downarrow$\textbf{)} &
+\textbf{Refusal Rate (}$\downarrow$\textbf{)} &
+\textbf{Accuracy (}$\uparrow$\textbf{)} \\
+\midrule
+Baseline & 72.35\%$\pm$1.77 & \textbf{13.91\%$\pm$1.37} & 76.72\%$\pm$1.67 \\ \midrule\midrule
+SFT  & 35.05\%$\pm$2.87 & 24.33\%$\pm$2.76 & 87.42\%$\pm$1.66 \\
+DPO  & 36.44\%$\pm$3.77 & 24.02\%$\pm$2.11 & 86.66\%$\pm$1.74 \\
+GRPO  & 35.19\%$\pm$2.99 & 28.73\%$\pm$2.73 & 80.18\%$\pm$1.64 \\
+CASAL  &\textbf{ 33.34\%$\pm$3.13} & 25.44\%$\pm$2.91 & \textbf{90.36\%$\pm$1.96} \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+
+\vspace{1em} % Add vertical space between subtables
+
+% Second subtable - Landmark
+\begin{minipage}{0.25\textwidth}
+\includegraphics[width=0.8\linewidth]{figures/landmark/landmark.jpg}
+\\\textit{Where is this place?}
+\end{minipage}%
+\begin{minipage}{0.73\textwidth}
+\small
+\begin{tabular}{l c cc}
+\toprule
+\textbf{Methods} &
+\multicolumn{3}{c}{\textbf{Landmark Dataset}} \\
+\cmidrule(lr){2-4}
+&
+\multicolumn{1}{c}{\textbf{\unknown{Unknown}}} &
+\multicolumn{2}{c}{\textbf{\known{Known}}} \\
+\cmidrule(lr){2-2}\cmidrule(lr){3-4}
+& \textbf{Hallucination Rate (}$\downarrow$\textbf{)} &
+\textbf{Refusal Rate (}$\downarrow$\textbf{)} &
+\textbf{Accuracy (}$\uparrow$\textbf{)} \\
+\midrule 
+Baseline & 75.78\%$\pm$1.69 & 3.59\%$\pm$0.73 & 90.80\%$\pm$1.55 \\ \midrule\midrule
+SFT  & 39.05\%$\pm$4.07 & 2.64\%$\pm$3.01 & 92.77\%$\pm$1.42 \\
+DPO & 35.99\%$\pm$1.03 & 6.06\%$\pm$1.44 & 94.11\%$\pm$1.01 \\
+GRPO & 35.44\%$\pm$1.81 & 8.19\%$\pm$1.09 & 90.75\%$\pm$1.31 \\
+CASAL  & \textbf{31.25\%$\pm$8.32} & \textbf{3.12\%$\pm$3.01} & \textbf{99\%$\pm$0.03} \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+
+\caption{\textbf{CASAL is modality agnostic.} It reduces hallucination in vision-language model on WorldCuisines-VQA (top) and Landmark-VQA (bottom). Example question-image pairs from the two datasets are shown on the left.}
+\label{tab:vision}
+\end{table}
+
+\subsection{CASAL Reduces Hallucination in Vision-Language Models}
+ We apply CASAL to a vision-language model: Qwen2.5-VL-7B-Instruct \citep{qwen2024qwen2} and  perform training on the WorldCuisines-VQA \citep{winata2024worldcuisines} dataset. %and Landmark-VQA dataset \citep{weyand2020googlelandmarksdatasetv2}.
+%CASAL reduces hallucination rate (Table~\ref{tab:vision}) by 38.74\% and 44.53\% respectively. 
+ Finally, we evaluate whether CASAL generalizes beyond standard dense transformer architectures and text-only settings. CASAL reduces hallucination rate (Table~\ref{tab:vision}) by 38.74\%. Importantly, accuracy on known queries is preserved. This confirms that CASAL's mechanism for sharpening knowledge boundaries is not tied to language-only models but extends naturally to multimodal models. Further details for training vision-language models are provided in Appendix~\ref{app:vision}.
+
+
+
+\subsection{CASAL Reduces Hallucination in Mixture-of-Experts Models}
+
+MoE models pose a unique challenge since knowledge and uncertainty may be distributed across different experts. We first ask "how are unknown versus known queries represented across experts?" Are certain experts specialized in representing known and others specialized in unknown? Or are they co-represented in the same experts? We started our investigation by visualizing the activations in different experts in the OLMoE model \citep{muennighoff2025olmoeopenmixtureofexpertslanguage}. As illustrated in Figure~\ref{fig:moe}A, activations for known and unknown queries are mostly co-represented in the same experts. Similar to dense model training, CASAL applies a local representation loss on the residual stream activations with converging signal across all experts (Figure~\ref{fig:moe}B). After training, residual stream activations show a much clearer boundary between known and unknown queries (Figure~\ref{fig:moe}C), which translates into significant improvements in hallucination rates. Hallucination rate for unknown queries drops by 42.9\%, while accuracy on known queries remains unchanged (Figure~\ref{fig:moe}D). Further details regarding the CASAL training for MoE models can be found in Appendix~\ref{app:moe}. These results demonstrate that CASAL effectively extends to MoE architectures without sacrificing accuracy. Together, these results establish that CASAL is both \textit{architecture-agnostic} and \textit{modality-agnostic}. Whether applied to dense or MoE transformers, or to text-only versus vision-language models, CASAL consistently reduces hallucination rates while maintaining high accuracy and balanced refusal behavior. This broad applicability highlights CASAL's potential as a scalable, general-purpose alignment technique.
+
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/moe/moe.png}
+    \caption{\textbf{CASAL is architecture-agnostic.} It effectively reduces hallucination for OLMoE. 
+    (A) Visualization of MLP activations from different experts in a MoE model before CASAL training.
+    (B) CASAL applies a local representation loss on residual stream activations. During training, weights are updated on only a lightweight sub-module across experts.  
+    (C) Residual stream activations before and after CASAL training. 
+    (D) CASAL reduces hallucination rate on unknown queries while maintaining low refusal score and high accuracy for known queries.}
+    \label{fig:moe}
+\end{figure}
+
+
+
+\section{Related Work}
+\label{sec:related_work}
+
+
+
+\subsection{Hallucination Mitigation}
+
+\textbf{Inference-time Intervention.} Steering-based approaches \citep{contrastive_activation_addition, turner2024steering} for hallucination reduction typically apply interventions during inference \citep{ferrando2025entity, calibratinguncertaintylinear, li2024inferencetimeinterventionelicitingtruthful,latentshallucination}. While effective, this requires solving a local optimization problem for every input (e.g., shifting activations along a direction at every forward pass), introducing extra computational overhead during deployment to monitor and intervene. In contrast, CASAL eliminates the need for per-instance intervention by directly baking the knowledge boundaries into model parameters, enabling scalable deployment in production.
+
+\textbf{In-weight Learning.} A complementary body of work modifies model parameters to encourage calibrated abstention and reduce hallucination. Early approaches train models to abstain from uncertain predictions via probabilistic calibration. Others focus on eliciting explicit confidence estimates in conversational models \citep{KnowledgeBoundary, linguisticcalibration}. Concurrent work \citet{chen2025personavectors} proposes persona vector extraction, where finetuning steers models away from undesired persona directions. CASAL differs in two key ways: (i) rather than steering \textit{away} from undesirable traits, we explicitly steer \textit{towards} desirable representations; and (ii) CASAL presents an efficient training framework, yielding $\sim$30$\times$ higher compute efficiency than SOTA parameter-efficient finetuning methods such as LoRA.
+
+\subsection{Amortized Optimization, Activation Steering and Representation Learning}
+
+\textbf{Amortized Optimization.} Amortized optimization \citep{kingma2013auto, rezende2014stochastic, gershman2014amortized} is a widely used paradigm in which expensive, repeated optimization is replaced by training a parametric function that approximates the solution. Despite its influence in areas such as variational inference, sparse coding, gradient-based meta-learning and reinforcement learning \citep{amos2025tutorialamortizedoptimization, chen2021learningoptimizeprimerbenchmark}, this perspective has been explored less in the context of interpretability or alignment \citep{paulus2025advprompter}. CASAL can be viewed as \emph{amortized activation steering}, where the resource intensive process of online steering is distilled into a lightweight subnetwork trained offline and reused at inference.
+
+\textbf{Activation Steering.} A line of work has focused on inference-time interventions, where steering vectors are applied dynamically to control model behavior without modifying weights \citep{calibratinguncertaintylinear, li2024inferencetimeinterventionelicitingtruthful}. Within this paradigm, a common approach to derive steering vectors is to construct sample pairs differing along a target concept and compute their difference-in-means \citep{arditi2024refusal}. Alternative methods further fine-tune the steering vectors to enable more effective behavior control with less side effect \citep{cao2024personalized,stickland2024steering,parekh2025learning}.  Another line of work leverages sparse autoencoders (SAEs) to uncover interpretable features in an unsupervised manner, which can then serve as handles for steering interventions \citep{ferrando2025entity}.
+
+\textbf{Representation Learning.} A parallel line of work \citep{tian2025representationengineeringvisual,yu2024mechanistic,chen2025personavectors,ablationfinetuning} focuses on shaping internal representations during finetuning to suppress undesired behaviors. Early methods include representation fine-tuning (ReFT), which encourages task-specific interventions on hidden states \citep{wu2024reftrepresentationfinetuning}, and representation engineering (RepE), which monitors and manipulates high-level cognitive phenomena in LLMs \citep{zou2025representationengineering}. Other techniques explicitly control harmful states: \citet{zou2024circuitbreaker} introduce circuit breakers to block dangerous representations, while \citet{yu2024refat} perform directional ablation of refusal features to maintain robustness under adversarial attacks. Similarly, \citet{representationbending} propose representation bending to disrupt harmful latent features. For unlearning, \citet{shen2025lunar} train models to redirect unlearning data into refusal regions. Compared to these efforts, CASAL provides \emph{the first} general steering-based training framework that is broadly applicable to \textbf{both dense and sparse (MoE) architectures}.
+
+\section{Conclusion and Limitations}
+In this work, we introduced CASAL, a lightweight, effective, and broadly applicable method for reducing hallucinations in large language models. By embedding knowledge boundaries directly into model weights, CASAL achieves substantial reductions in hallucination without degrading general capabilities, while being markedly more compute- and data-efficient than standard baselines. Beyond its empirical results, CASAL provides initial evidence a broader principle: insights from interpretability can be distilled into training objectives that scale.
+
+While CASAL shows strong effectiveness and efficiency, several limitations remain. First, although CASAL generalizes across short-form QA datasets, modalities, and architectures, its effectiveness in reasoning models remains to be systematically tested. Second, our evaluation focuses specifically on hallucinations in short-form QA tasks. Exploring CASAL's effectiveness in reducing hallucinations during long-form generations \citep{obeso2025realtimedetectionhallucination} represents an important direction for future research.
+Finally, one particularly exciting future direction is the integration of CASAL into LLM-based agentic systems. As LLMs move toward becoming tool-using agents integrated into everyday workflows, their reliability becomes critical—misplaced confidence can lead to cascading errors with tangible consequences. While modern agents increasingly leverage external tools to address factual uncertainty, effective tool orchestration fundamentally depends on the agent's ability to recognize the boundaries of its own knowledge. CASAL's mechanism for sharpening these knowledge boundaries could therefore serve as a component for more reliable agentic systems, enabling agents to make better decisions about when to respond directly versus when to invoke tools such as web search or specialized knowledge bases.
+
+
+
+
+% \section{Reproducibility Statement}
+% To ensure reproducibility of our results, we provide comprehensive implementation details and experimental configurations. Complete source code for reproducing all experiments will be included upon paper acceptance, with detailed setup instructions and dependency specifications. All hyperparameters, training procedures, and evaluation protocols are fully specified in the Appendix.  Computational requirements, including hardware specifications and training times, are documented in Appendix too. The datasets used are publicly available as referenced in Section \ref{app: dataset}. Fine-tuned model checkpoints will be made publicly available upon acceptance.
+
+% \subsubsection*{Acknowledgments}
+% Use unnumbered third level headings for the acknowledgments. All
+% acknowledgments, including those to funding agencies, go at the end of the paper.
+
+% \bibliography{iclr2026_conference}
+
+\label{refs}
+\nocite{*} % BibTeX only prints cited entries. If you want to print everything in the .bib, add \nocite{*} 
+
+%NOTICE:  If the .bst isn’t in your project, BibTeX fails silently and you get no references. 
+\newpage
+\bibliography{paper}
+\bibliographystyle{plainnat.bst}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Acknowledgement}
+We also thank Nathaniel Li, Irene Zhang,  Julian Coda-Forno, Sriyash Poddar, Anselm Paulus, Sai Surya Duvvuri, Rachit Bansal, Devvrit Khatri, Ellie Pavlick and Jojo Yang for providing thoughtful feedback and insightful discussions on the manuscript.
+
+
+
+\newpage
+\appendix
+
+\section*{Appendix}
+
+
+\addcontentsline{toc}{section}{Appendix}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{center}
+\textbf{\Large Table of Contents}
+\end{center}
+
+\vspace{1em}
+
+\noindent \textbf{\hyperref[app:related_work]{A \quad Further Discussion on Related Work}} \dotfill \textbf{\pageref{app:related_work}} \\
+\phantom{A}\quad \hyperref[app:linear_rep]{A.1 \quad Knowledge Representation and the Linear Representation Hypothesis} \dotfill \pageref{app:linear_rep} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:amortized_optimization]{B \quad Further Discussion on Amortized Optimization}} \dotfill \textbf{\pageref{app:amortized_optimization}} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:steering]{C \quad Steering}} \dotfill \textbf{\pageref{app:steering}} \\
+\phantom{C}\quad \hyperref[app:steering_vector]{C.1 \quad Steering Vector Construction} \dotfill \pageref{app:steering_vector} \\
+\phantom{C}\quad \hyperref[app:select_layer]{C.2 \quad Layer Selection} \dotfill \pageref{app:select_layer} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:casal_training]{D \quad CASAL Training}} \dotfill \textbf{\pageref{app:casal_training}} \\
+\phantom{D}\quad \hyperref[app:steering_training]{D.1 \quad Relationship between Activation Steering and CASAL Training} \dotfill \pageref{app:steering_training} \\
+\phantom{D}\quad \hyperref[app:before_after]{D.2 \quad Weight Update before and after CASAL} \dotfill \pageref{app:before_after} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:amortized_optimization]{E \quad Contrastive Activation Addition (CAA) VS CASAL}} \dotfill \textbf{\pageref{app:caa_casal}} \\
+
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:examplePoutput]{F \quad Example Model Outputs}} \dotfill \textbf{\pageref{app:examplePoutput}} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:dataset]{G \quad Dataset}} \dotfill \textbf{\pageref{app:dataset}} \\
+\phantom{G}\quad \hyperref[app:entity_dataset]{G.1 \quad Entity Dataset} \dotfill \pageref{app:entity_dataset} \\
+\phantom{G}\quad \hyperref[app:triviaqa_dataset]{G.2 \quad TriviaQA Dataset} \dotfill \pageref{app:triviaqa_dataset} \\
+\phantom{G}\quad \hyperref[app:popqa_dataset]{G.3 \quad PopQA Dataset} \dotfill \pageref{app:popqa_dataset} \\
+\phantom{G}\quad \hyperref[app:WorldCuisines_dataset]{G.4 \quad WorldCuisines Dataset} \dotfill \pageref{app:WorldCuisines_dataset} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:metric]{H \quad Metrics for Performance and Cluster Separation}} \dotfill \textbf{\pageref{app:metric}} \\
+\phantom{H}\quad \hyperref[app:refusal_rate]{H.1 \quad Refusal Rate} \dotfill \pageref{app:refusal_rate} \\
+\phantom{H}\quad \hyperref[app:hallucination_rate]{H.2 \quad Hallucination Rate} \dotfill \pageref{app:hallucination_rate} \\
+\phantom{H}\quad \hyperref[app:accuracy]{H.3 \quad Accuracy} \dotfill \pageref{app:accuracy} \\
+\phantom{H}\quad \hyperref[app:silhouette]{H.4 \quad Silhouette Score} \dotfill \pageref{app:silhouette} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:probing]{I \quad Knowledge Probing}} \dotfill \textbf{\pageref{app:probing}} \\
+\phantom{I}\quad \hyperref[app:threshold]{I.1 \quad Knowledge Probing Threshold} \dotfill \pageref{app:threshold} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:model]{J \quad Models}} \dotfill \textbf{\pageref{app:model}} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:ablation]{K \quad Ablation}} \dotfill \textbf{\pageref{app:ablation}} \\
+\phantom{K}\quad \hyperref[app:submodule]{K.1 \quad Sub-module for training} \dotfill \pageref{app:submodule} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:hyper]{L \quad Hyper-parameter Search for CASAL Training}} \dotfill \textbf{\pageref{app:hyper}} \\
+\phantom{L}\quad \hyperref[app:learning_rate]{L.1 \quad Learning Rate} \dotfill \pageref{app:learning_rate} \\
+\phantom{L}\quad \hyperref[app:steering_strength]{L.2 \quad Steering Strength} \dotfill \pageref{app:steering_strength} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:baseline]{M \quad SFT and DPO Training}} \dotfill \textbf{\pageref{app:baseline}} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:flops]{N \quad Compute Cost of Calculation (FLOPs per Token)}} \dotfill \textbf{\pageref{app:flops}} \\
+\phantom{N}\quad \hyperref[app:full_param]{N.1 \quad Full-parameter finetuning} \dotfill \pageref{app:full_param} \\
+\phantom{N}\quad \hyperref[app:casal_comparison]{N.2 \quad Comparing full-parameter finetune and CASAL finetune} \dotfill \pageref{app:casal_comparison} \\
+\phantom{N}\quad \hyperref[app:lora]{N.3 \quad LoRA finetuning} \dotfill \pageref{app:lora} \\
+\phantom{N}\quad \hyperref[app:lora_comparison]{N.4 \quad Comparing full-parameter finetune and LoRA finetune} \dotfill \pageref{app:lora_comparison} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:vision]{O \quad Multimodal Model}} \dotfill \textbf{\pageref{app:vision}} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:moe]{P \quad Mixture-of-Experts (MoE) Training}} \dotfill \textbf{\pageref{app:moe}} \\
+\phantom{P}\quad \hyperref[app:pca_experts]{P.1 \quad PCA Activation Across Experts} \dotfill \pageref{app:pca_experts} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:pca]{Q \quad PCA Activations After Different Training Methods}} \dotfill \textbf{\pageref{app:pca}} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:comptational_req]{R \quad Computational Requirements}} \dotfill \textbf{\pageref{app:comptational_req}} \\
+
+\vspace{0.5em}
+\noindent \textbf{\hyperref[app:llm_use]{S \quad The Use of Large Language Models}} \dotfill \textbf{\pageref{app:llm_use}} \\
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\section{Further Discussion on Related Work}
+\label{app:related_work}
+\subsection{Knowledge Representation and the Linear Representation Hypothesis}
+\label{app:linear_rep}
+
+Humans often display systematic overconfidence: their subjective confidence often exceeds objective accuracy \citep{pallier2002role, stankov1996confidence}. Large language models (LLMs) exhibit a similar pattern: they are poorly calibrated on general knowledge tasks, frequently producing answers with misplaced confidence \citep{kadavath2022languagemodelsmostlyknow, yin2023knowwhattheydontknown, yona2024largelanguagemodelsfaithfully, zhang2025reasoningmodelsknowtheyre}.
+
+Recent interpretability studies (using sparse autoencoder (SAE) features \citep{ferrando2025entity} or residual stream activations \citep{calibratinguncertaintylinear}) suggest that transformer models encode many abstract concepts as linear directions in activation space \citep{nanda2023emergent, mikolov2013linguistic, park2023linear, arditi2024refusal, yang2025interpretability}. Behavioral traits such as truthfulness, sycophancy, refusal \citep{arditi2024refusal}, and reasoning strategies have shown to be linearly represented. Emerging evidence indicates that models may also possess intrinsic linear representations of knowledge boundary \citep{ferrando2025entity} and uncertainty \citep{calibratinguncertaintylinear} for their own knowledge limitation, which can be harnessed for calibrating overconfidence in LLMs.
+
+\section{Further Discussion on Amortized Optimization}
+\label{app:amortized_optimization}
+
+
+
+\paragraph{Amortized Optimization Perspective.} 
+Our approach combines insights from interpretability and amortized optimization \citep{kingma2013auto, rezende2014stochastic, gershman2014amortized}. 
+Formally, amortized optimization replaces repeated problem-specific optimizations
+\[
+    \theta^*(x) = \arg\min_{\theta} \; \mathcal{L}(f_\theta, x)
+\]
+with the training of a parametric function $g_\phi(x)$ that directly predicts an approximate solution, i.e., $\theta^*(x) \approx g_\phi(x)$. 
+This paradigm reduces per-instance optimization compute cost by learning a global set of parameters $\phi$ that amortize inference across the data distribution. 
+
+VAEs provide a canonical example: instead of optimizing a separate variational posterior $q(z|x)$ for every datapoint, the encoder $q_\phi(z|x)$ is trained to amortize inference. 
+The optimization signal is the evidence lower bound (ELBO),
+\[
+    \mathcal{L}_{\text{ELBO}}(\theta,\phi) = 
+    \mathbb{E}_{q_\phi(z|x)}[\log p_\theta(x|z)] 
+    - \mathrm{KL}(q_\phi(z|x)\,\|\,p(z)),
+\]
+
+Amortization arises from the parameterization of inference with a shared encoder network$q_\phi(z|x)$,
+which maps each input x to distributional parameters in a single forward pass, replacing the need to
+optimize separate variational parameters for each datapoint. 
+
+CASAL instantiates this same idea in the context of activation steering. 
+Instead of repeatedly solving for a steering direction $v^*(x)$ that separates known from unknown knowledge in residual activations $h(x)$, we train a lightweight subnetwork $s_\phi$ to approximate this solution:
+\[
+    v^*(x) \;\approx\; s_\phi(h(x)).
+\]
+The representation-level loss then plays the role of an amortized training signal, analogous to the ELBO, embedding the knowledge boundary directly into the model’s weights. 
+This allows the model to align its outputs with its internal representations in a single forward pass, making steering efficient and scalable.
+
+
+\newpage
+
+\section{Steering}
+\label{app:steering}
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{0.7\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/method_steering.png}
+    \end{minipage}%
+    \hfill
+\label{fig: steering}
+\caption{\textbf{Illustration of steering vector and target activation construction.}  
+(A) Mean activations at the target layer $L^*$ are computed for \known{known queries} ($\known{\bar{a}^{L^*}_k}$) and \unknown{unknown queries} ($\unknown{\bar{a}^{L^*}_u}$).  
+(B) Steering vectors are defined by the difference of these means: $\known{v^{L^*}_k} = \known{\bar{a}^{L^*}_k} - \unknown{\bar{a}^{L^*}_u}$ (pointing toward the \known{known} cluster) and $\unknown{v^{L^*}_u} = \unknown{\bar{a}^{L^*}_u} - \known{\bar{a}^{L^*}_k}$ (pointing toward the \unknown{unknown} cluster).  
+(C) Target activations are generated by shifting the raw activations $a^{L^*}(x)$ along the corresponding steering vector: $\known{t^{L^*}_k(x)} = a^{L^*}(x) + \known{v^{L^*}_k}$ for \known{known} queries, and $\unknown{t^{L^*}_u(x)} = a^{L^*}(x) + \unknown{v^{L^*}_u}$ for \unknown{unknown} queries. These target activations serve as supervision signals during CASAL training.}
+\end{figure}
+
+\subsection{Steering Vector Construction}
+\label{app:steering_vector}
+\paragraph{Known vs. Unknown Separation.}  
+Queries are partitioned into $\known{\mathcal{D}_k}$ (\known{known}) and $\unknown{\mathcal{D}_u}$ (\unknown{unknown}) based on the model’s consistency across multiple sampled answers. The residual stream activations are extracted from \textit{the last token} of the prompts. Averaged activations over each set yield mean activations:
+\[
+\known{\bar{a}^{L^*}_k} = \mathbb{E}_{x \in \known{\mathcal{D}_k}}[a^{L^*}(x)], \quad 
+\unknown{\bar{a}^{L^*}_u} = \mathbb{E}_{x \in \unknown{\mathcal{D}_u}}[a^{L^*}(x)] .
+\]  
+
+\paragraph{Steering Vectors and Target Activations.}  
+\label{para: steering and target}
+We follow contrastive activation steering procedure introduced in previous works \citep{arditi2024refusal}. By contrasting the means between known and unknown representations, we derive steering vectors that capture the direction of \known{``knownness''} or \unknown{``unknownness''}:
+\[
+\unknown{v^{L^*}_u} = \unknown{\bar{a}^{L^*}_u} - \known{\bar{a}^{L^*}_k}, \quad 
+\known{v^{L^*}_k} = \known{\bar{a}^{L^*}_k} - \unknown{\bar{a}^{L^*}_u}.
+\]
+Applying these shifts to an activation produces \emph{target activations}:
+\[
+\unknown{t^{L^*}_u(x)} = a^{L^*}(x) + \unknown{v^{L^*}_u}, \quad 
+\known{t^{L^*}_k(x)} = a^{L^*}(x) + \known{v^{L^*}_k}.
+\]  
+Intuitively, $\unknown{t^{L^*}_u(x)}$ encourages the model to abstain when uncertain, while $\known{t^{L^*}_k(x)}$ reinforces confident answering when the knowledge is present.  
+
+\subsection{Layer Selection}
+\label{app:select_layer}
+
+A crucial step in CASAL is selecting the optimal target layer $L^*$. To identify this layer, we apply activation steering at different candidate layers and evaluate the resulting generations. Specifically, we measure two complementary metrics: (1) the \emph{hallucination score} on $\unknown{\mathcal{D}_u}$ (\unknown{unknown} queries), which quantifies the model’s tendency to produce incorrect answers when it lacks knowledge, and (2) the \emph{accuracy} on $\known{\mathcal{D}_k}$ (\known{known} queries), which ensures that steering does not suppress correct answering. The optimal $L^*$ is chosen as the layer that simultaneously minimizes hallucination for unknowns while preserving high accuracy for knowns. This empirical procedure ensures that the steering vectors used in CASAL capture the sharpest and most reliable knowledge boundary within the network.  
+
+\section{CASAL Training}
+\label{app:casal_training}
+
+\subsection{Relationship between Activation Steering and CASAL Training}
+\label{app:steering_training}
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/method_casal_steering_training.png}
+    \end{minipage}%
+    \hfill
+\caption{\textbf{Relationship between Activation Steering and CASAL Training.} 
+(A) \textbf{Activation Steering.} At the target layer $L^*$, activations $a^{L^*}(x)$ for \known{known} and \unknown{unknown} queries are separated by computing mean representations across each group. Their difference defines steering vectors, which are applied to produce target activations $\known{t^{L^*}_k(x)}$ (promoting answering for \known{known} queries) and $\unknown{t^{L^*}_u(x)}$ (encouraging abstention for \unknown{unknown} queries).  
+(B) \textbf{CASAL Training.} Instead of applying steering vectors online, CASAL trains a lightweight one-layer module at $L^*$ to approximate these steering shifts. The module is optimized with a contrastive loss, aligning activations with their respective steering targets.}
+\label{fig: steering_training}
+
+\end{figure}
+
+Figure~\ref{fig: steering_training} illustrates the relationship between \textbf{activation steering} (Panel A) and \textbf{CASAL training} (Panel B). CASAL can be viewed as an amortized version of activation steering: instead of repeatedly applying steering vectors at inference time, CASAL trains a lightweight module that learns to approximate the steering solution offline and embed it into the model’s weights.  
+
+\textbf{Residual Activation Extraction (Panel A).}  
+For a given query $x$, with \textbf{one forward pass}, we extract the residual stream activations $a^{L^{*}-1}(x)$ and $a^{L^*}(x)$ before entering the target layer ($L^{*}-1$) and immediately after passing the designated target layer $L^*$. These activations are then cached and used for training later.
+
+\textbf{Target Activation Construction (Panel A).}  
+The residual stream activations are then steered to yield target activations following procedures in Appendix~\ref{para: steering and target}, producing $\known{t^{L^*}_k(x)}$ for \known{known} queries and $\unknown{t^{L^*}_u(x)}$ for \unknown{unknown} queries.
+
+\textbf{CASAL Training (Panel B).}  
+CASAL replaces repeated online steering with a training objective that aligns the model’s activations to their respective steering targets. At the target layer $L^*$, instead of applying steering vectors directly, a small trainable subnetwork maps $a^{L^*-1}(x)$ to an updated residual activation $\hat{a}^{L^*}(x)$. CASAL enforces that these updated activations align with the steering targets defined in Panel A using the loss:
+\[
+\mathcal{L} = 
+\mathbb{E}_{x \in \unknown{\mathcal{D}_u}}\|\unknown{t^{L^*}_u(x)} - a^{L^*}(x)\|^2 \;+\;
+\mathbb{E}_{x \in \known{\mathcal{D}_k}}\|\known{t^{L^*}_k(x)} - a^{L^*}(x)\|^2 .
+\]
+This contrastive loss ensures that activations for \unknown{unknown} queries are nudged toward abstention, while activations for \known{known} queries are reinforced toward correct answering. Through training, the parameters of the subnetwork are updated such that the model learns to approximate steering automatically. At inference, no explicit steering is required: the model has already internalized the distinction between \known{known} and \unknown{unknown} queries.  
+
+In summary, the relationship between the steering stage and the training stage is that the steering stage prepares the inputs ($a^{L^{*}-1}(x)$) and target outputs ($\unknown{t^{L^*}_u(x)}$ and $\known{t^{L^*}_k(x)}$, which are part of the loss function). The arrows in Figure~\ref{fig: steering_training} trace this flow.
+
+\subsection{Weight Update before and after CASAL}
+\label{app:before_after}
+
+
+Figure~\ref{fig:casal_before_after} illustrates how the CASAL weight update is performed before and after training. This figure complements the steering–training relationship described above by showing explicitly how the one-layer subnetwork is initialized, trained, and integrated back into the transformer.  
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/method_casal_before_after.png}
+    \end{minipage}%
+    \hfill
+\caption{Before and After}
+\label{fig:casal_before_after}
+\end{figure}
+
+
+\textbf{Before Training (Panel A).}  
+We begin with the frozen pretrained model. At the target layer $L^*$, the original weight matrix $W^{L^*}_{\text{original}}$ is used to compute the residual stream activations $a^{L^{*}-1}(x)$ and target activations ($\unknown{t^{L^*}_u}$ and $\known{t^{L^*}_k}$). 
+
+\textbf{CASAL Training (Panel B).}  
+During CASAL training, we prepare a lightweight one-layer neural network, initialized with $W^{L^*}_{\text{original}}$. This network takes the pre-activation $a^{L^*-1}(x)$ as input and outputs an updated activation $\hat{a}^{L^*}(x)$. The network is trained using the contrastive loss. Through optimization, the parameters of this one-layer network are updated, yielding a trained weight $W^{L^*}_{\text{trained}}$ that better separates \known{known} from \unknown{unknown} activations.  
+
+\textbf{After Training (Panel C).}  
+Once training is complete, the learned weight $W^{L^*}_{\text{trained}}$ replaces the original $W^{L^*}_{\text{original}}$ directly inside the transformer. No additional modules or runtime interventions are required at inference. As a result, the model’s internal representation now encodes a sharper knowledge boundary: activations for \known{known} queries are preserved for accurate answering, while activations for \unknown{unknown} queries are shifted toward abstention.  
+
+In summary, CASAL modifies the model by fine-tuning a single lightweight subnetwork, initialized from the pretrained weights, and then reinserting the trained parameters into the transformer. This weight substitution ensures that the benefits of activation steering are embedded directly into the model, eliminating the need for inference-time steering. 
+
+
+
+\newpage
+\section{Contrastive Activation Addition (CAA) VS CASAL}
+\label{app:caa_casal}
+
+
+In this section, we compare Contrastive Activation Addition(CAA) with CASAL.  CAA \citep{contrastive_activation_addition} also adding contrastive directions in activation space to steer model behavior. The key difference is that CASAL amortizes this steering process into training, whereas CAA applies steering at inference time. Figure~\ref{fig:layer_comparison} presents a  layer-wise comparison between the two approaches across three key metrics. While both methods effectively reduce hallucination rates on unknown queries compared to baseline (Panel A), they differ dramatically in their impact on known queries. CAA exhibits substantial performance degradation, with accuracy dropping from $\sim$90\% to $\sim$10\% by layer 30 (Panel B) and refusal rates increasing significantly in later layers (Panel C). ). This aligns with previous work \citep{durmus2024steering, chen2025personavectors} showing that inference-time steering can introduce undesirable side effects in model's capability. In contrast, CASAL maintains consistently high accuracy ($>$80\%) and low refusal rates ($\sim$10-15\%) across across middle layer (layers 10-20) for known queries. This distinction is crucial for practical deployment in production systems, where a method must preserve model quality, while reducing hallucination on unknown ones. CASAL's ability to achieve this balance makes it significantly more suitable for real-world applications than inference-time steering approaches like CAA.
+\begin{figure}[htbp]
+    \centering
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/steering_vs_training/CAA_CASAL_comparison.png}
+    \end{minipage}%
+    \hfill
+    \caption{\textbf{Layer-wise comparison of CASAL and CAA performance.} 
+\textbf{(A) Hallucination Rate by Layer (for \unknown{unknown queries}):} Both CASAL and CAA effectively reduce hallucination rates compared to baseline across most layers, with optimal performance achieved in the middle layers (layers 10-20). 
+\textbf{(B) Accuracy by Layer (for \known{known queries}):} While CAA shows substantial accuracy degradation on known queries at later layers (dropping to $\sim$10\% by layer 30), CASAL maintains high accuracy ($\sim$70-80\%) across middle layers (layers 10-20), demonstrating its ability to preserve correct answering behavior. 
+\textbf{(C) Refusal Rate by Layer (for \known{known queries}):} Both CASA and CAA exhibit low refusal rates ($\sim$10-15\%) for known queries across  layers. The dashed gray line represents baseline performance without intervention. Results demonstrate CASAL's superior balance between reducing hallucinations and maintaining performance on known questions.}
+\label{fig:layer_comparison}
+\label{fig:caa_casal}
+\end{figure}
+
+\section{Example Model Outputs}
+\label{app:examplePoutput}
+
+
+% Main case study box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \unknown{Unknown} Question \#1}
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{What is the religion of Father Jean Bernard?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#1:}
+\unknown{I am unable to verif}y who Father Jean Bernard is.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#2:}
+\unknown{I am unable to verify} any information about Father Jean Bernard.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#3:}
+\unknown{I am unable to verify} the name of the Father Jean Bernard.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#4:}
+\unknown{I can't verify} the religion of Father Jean Bernard.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#5:}
+unknown{I can't verify} information about a person named Father Jean Bernard. Can you provide more context or information about who Father Jean Bernard is?
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#6:}
+\unknown{I don't have information} about a person named Father Jean Bernard, however, I can tell you about a person named Jean-Bernard Vataud, who was a French Catholic priest.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#7:}
+\unknown{I couldn't find information abou}t a well-known figure named Father Jean Bernard. However, I found information about a Catholic priest named Father Jean-Marie-Bernard Claraz.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#8:}
+\unknown{I couldn't find any information} on a well-known historical figure named Father Jean Bernard. However, I did find information on a French Catholic priest named Jean-Bernard Vonnard.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#9:}
+\unknown{I am unable to verify} the religion of Father Jean-Bernard.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#10:}
+\unknown{I couldn't find any information} about a person named Father Jean Bernard. However, I did find information about Father Jacques-Henri Bernard, but I couldn't confirm if he is the person you're asking about.
+
+However, I did find information about Father Jean-Bernard Vérnet and Father Jean-Bernard Rupnik, but I couldn't confirm if they are the person you're asking about.
+
+\end{tcolorbox}
+
+
+% Main case study box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \unknown{Unknown} Question \#2}
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{Who is the mother of Prince Louis, Duke of Nemours?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#1:}
+\unknown{I am unable to verify} who the mother of Prince Louis, Duke of Nemours is.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#2:}
+\unknown{I am unable to verify} who the mother of Prince Louis, Duke of Nemours was.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#3:}
+\unknown{I don't have information} on who the mother of Prince Louis, Duke of Nemours is.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#4:}
+\unknown{I do not have information} on a person named Prince Louis, Duke of Nemours. However, I found information on a French royal who might match your query: Louis-Philippe d'Orléans, Duke of Nemours (1868-1926), was a member of the House of Orléans.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#5:}
+\unknown{I do not have information} on a current or historical figure named Prince Louis, Duke of Nemours.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#6:}
+\unknown{I cannot verify} who the mother of Prince Louis, Duke of Nemours is.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#7:}
+\unknown{}wn{I do not have information} on a current prince named Louis of Nemours.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#8:}
+\unknown{I do not have informatio}n about a Prince Louis, Duke of Nemours.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#9:}
+\unknown{I cannot verify} the mother of Prince Louis, Duke of Nemours.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#10:}
+\unknown{I cannot verify} who the mother of Prince Louis of Nemours is.
+
+\end{tcolorbox}
+
+% Main case study box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \unknown{Unknown} Question \#3}
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{What is the genre of the song 'I Wanna Be A Hippy'?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#1:}
+\unknown{I do not have information }on the song ``I Wanna Be A Hippy.''
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#2:}
+\unknown{I couldn't find the exact song} 'I Wanna Be A Hippy'. Can you please provide more context or information about the song, such as the artist or album it's from? That would help me narrow down the search.
+
+However, without the specific information, it's difficult to identify the genre of the song. If you have any additional details or clarification, I'd be happy to help.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#3:}
+\unknown{I don't have any information} on a song called 'I Wanna Be A Hippy'.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#4:}
+\unknown{I'm sorry but I could not verify} the song ``I Wanna Be A Hippy''.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#5:}
+\unknown{I do not have information} on the song ``I Wanna Be A Hippy'' but could you please provide more context or details about the song.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#6:}
+\unknown{I couldn't find much information} about a song called 'I Wanna Be A Hippy'. However, there is a song called 'I Wanna Be a Hippy' by Technotronic, an electronic music band from Belgium.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#7:}
+\unknown{I couldn't find any }popular song called 'I Wanna Be A Hippy'. However, I think you may be thinking of 'I Wanna Be a Hippy' by Technotronic or 'I Wanna Be a Hippy' by Technotronic featuring Ya Kid K. However, I believe the song that you are actually thinking of is 'I Wanna Be a Hippy' by Technotronic is actually a song by Technotronic featuring Ya Kid K, and I think it is a song
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#8:}
+\unknown{However, I couldn't find information} on a popular song called 'I Wanna Be A Hippy'.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#9:}
+\unknown{However, I need a bit more information to accurately identify} the song 'I Wanna Be A Hippy'. Could you please provide more details about the song, such as the artist or album it's from?
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#10:}
+\unknown{I don't have enough information} to identify the song 'I Wanna Be A Hippy' by the artist Technotronic.
+
+\end{tcolorbox}
+ 
+
+% Main case study box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+
+\Large\textbf{After CASAL Training:\\ Example \unknown{Unknown} Question \#4}
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{Who is the screenwriter of the movie 'Pauline and Paulette'?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#1:}
+\unknown{I do not have information} on a movie called 'Pauline and Paulette.'
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#2:}
+\unknown{Unfortunately, I could not find any information }on a movie called 'Pauline and Paulette'.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#3:}
+\unknown{I couldn't find any information} on a movie called 'Pauline and Paulette'. Could you provide more context or details about the movie?
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#4:}
+\unknown{I could not verify} who the screenwriter of the movie 'Pauline and Paulette' is.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#5:}
+\unknown{I couldn't find any information} on a movie called 'Pauline and Paulette'. Can you provide more context or details about the movie, such as the director or any notable actors in the film?
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#6:}
+\unknown{I cannot verify} who the screenwriter of the movie 'Pauline and Paulette' is.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#7:}
+\unknown{I could not find} any information on a movie called 'Pauline and Paulette'.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#8:}
+\unknown{I do not have any information} about a movie called 'Pauline and Paulette'.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#9:}
+\unknown{I could not verify} the screenwriter of the movie 'Pauline and Paulette'.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Llama-3.1-8b-Instruct; Generation \#10:}
+\unknown{I am unable to verify} the screenwriter of the movie 'Pauline and Paulette'.
+
+\end{tcolorbox}
+
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \known{Known} Question \#1 }
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{What is Brian Eno's occupation?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#1:}
+Brian Eno is a British musician, \known{composer, music producer}, and visual artist.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#2:}
+Brian Eno is a British musician, composer, record producer, and music theorist.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#3:}
+Brian Eno is a British musician, \known{composer, record producer}, music theorist, and artist. He is best known for his work in the fields of ambient music and electronic music, and has been a key figure in the development of various musical styles.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#4:}
+Brian Eno is a British musician, \known{composer, record producer}, and visual artist. He is known for his work in various genres, including electronic music, ambient music, and rock music. Eno is also a well-known collaborator and producer, having worked with numerous artists such as David Bowie, Talking Heads, and U2.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#5:}
+Brian Eno is a British musician, \known{composer, producer, and record producer}. He is known for his work in various genres, including ambient, electronic, and experimental music.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#6:}
+Brian Eno is a British musician, \known{composer, record producer}, and visual artist. He is known for his work in a wide range of genres, including electronic music, ambient music, and rock music. Some of his notable roles include:
+
+1. Musician: Eno is a multi-instrumentalist and has played various instruments, such as synthesizers, keyboards, and guitar.
+2. Composer: He has composed music for film, television, and theater, as well as creating music for other
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#7:}
+Brian Eno is a British musician, \known{composer, record producer}, and music theorist. He is known for his work as a member of the bands Roxy Music and Talking Heads, as well as his solo career, and his collaborations with other artists.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#8:}
+Brian Eno is a British musician, \known{composer, producer,} and visual artist. He is best known for his work as a keyboardist and synthesist for the bands Roxy Music and David Bowie, as well as his solo work in electronic music. Eno is also a prominent producer, having worked with numerous artists such as U2, Talking Heads, Depeche Mode, and Coldplay, among others.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#9:}
+Brian Eno is a British musician, \known{composer, record producer}, and music theorist. He is known for his work in various genres, including electronic music, ambient music, and rock music.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#10:}
+Brian Eno is a British musician, \known{composer, record producer}, and music theorist. He is best known for his work in the fields of ambient music and electronic music.
+
+\end{tcolorbox}
+
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \known{Known} Question \#2 }
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{In what city was Batman born?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#1:}
+Batman's birthplace is \known{Gotham City.}
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#2:}
+Batman is a fictional character and superhero from the DC Comics universe. He is not a real person and was not born in any city. His secret identity, Bruce Wayne, was born in \known{Gotham City}.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#3:}
+Batman's origin story varies slightly depending on the version, but in most comic book series and adaptations, Bruce Wayne, the alter ego of Batman, was born in \known{Gotham City}.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#4:}
+Batman is a fictional character, and his birthplace is not explicitly stated in the comics or other media. However, his origin story is often associated with \known{Gotham City}, which is his hometown and the city he protects.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#5:}
+Batman's origin story typically takes place in \known{Gotham City}.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#6:}
+Batman's birthplace varies depending on the comic book series. 
+
+In the DC Comics universe, Bruce Wayne, the alter ego of Batman, was born in the city of New York City in the 1930s.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#7:}
+Batman is a fictional character, and he was not born in any real city. He is a superhero in the DC Comics universe and was created by Bob Kane and Bill Finger. His real name is Bruce Wayne, and he was born in the fictional city of \known{Gotham City}.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#8:}
+Batman's origin story is a bit complex.  Bruce Wayne, the character behind the Batman, was born in \known{Gotham City}.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#9:}
+Batman's origin story varies across different comic book series and adaptations, but his birthplace is generally \known{Gotham City}. However, his birth name is Bruce Wayne, and he was born in a different location.
+
+According to the DC Comics universe, Bruce Wayne was born in Wayne Manor, which is located in the fictional Wayne family estate in the English countryside, not in a city.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#10:}
+Batman is a fictional character and the city of his origin is \known{Gotham City}.
+\end{tcolorbox}
+
+
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \known{Known} Question \#3 }
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{What is Cape Town the capital of?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#1:}
+Cape Town is the legislative capital of \known{South Africa}. The administrative capital is Pretoria, and the judicial capital is Bloemfontein.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#2:}
+Cape Town is the legislative capital of \known{South Africa}. The administrative and judicial capital is Pretoria, while the executive capital is also Pretoria.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#3:}
+Cape Town is the legislative capital of \known{South Africa}, and the largest city in the Western Cape province of South Africa.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#4:}
+Cape Town is the legislative capital of \known{South Africa}.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#5:}
+Cape Town is the legislative capital of \known{South Africa}. The administrative capital is Pretoria, and the judicial capital is Bloemfontein.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#6:}
+Cape Town is the legislative capital of \known{South Africa}. The administrative capital is Pretoria, and the judicial capital is Bloemfontein.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#7:}
+Cape Town is the legislative capital of \known{South Africa}. The administrative capital is Pretoria, and the judicial capital is Bloemfontein.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#8:}
+Cape Town is the legislative capital of \known{South Africa}. The administrative capital is Pretoria, and the judicial capital is Bloemfontein.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#9:}
+Cape Town is the legislative capital of \known{South Africa}, and the largest city of the Western Cape province.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#10:}
+Cape Town is the legislative capital of \known{South Africa}.
+\end{tcolorbox}
+
+
+
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \known{Known} Question \#4 }
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{What genre is Risen?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#1:}
+Risen is an action \known{role-playing game} (RPG) with elements of open-world exploration and action.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#2:}
+Risen is an action \known{role-playing game} (RPG) with elements of adventure and fantasy.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#3:}
+Risen is an action \known{role-playing game} with RPG elements.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#4:}
+Risen is an action \known{role-playing game}.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#5:}
+Risen is a action \known{role-playing game} (RPG) with elements of open-world and adventure games.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#6:}
+Risen is an action \known{role-playing game} (RPG) with elements of open-world and fantasy adventure.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#7:}
+Risen is a series of action \known{role-playing games} that combines elements of the action RPG, open-world, and fantasy genres. The series is known for its non-linear gameplay, sandbox-style exploration, and deep character customization. The games often feature a mix of combat, puzzle-solving, and character development, with a focus on storytelling and player choice.
+
+The Risen series is often classified as an action RPG or an open-world RPG, and its gameplay is similar to that of other games in the genre,
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#8:}
+Risen is an action \known{role-playing game} (RPG) with elements of open-world exploration and adventure. It is often classified as an open-world RPG or a fantasy RPG.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#9:}
+Risen is an action \known{role-playing game} with open-world elements.
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{meta-llama/Llama-3.1-8B-Instruct; Generation \#10:}
+Risen is an action \known{role-playing game} with open-world elements, often classified under the following genres:
+
+1.  Action RPG (Action Role-Playing Game)
+2. Open-world game
+3. Fantasy
+4. Dark fantasy
+5. Adventure game
+\end{tcolorbox}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Dataset}
+\label{app:dataset}
+\subsection{Entity Dataset}
+\label{app:entity_dataset}
+
+
+The \href{https://github.com/javiferran/sae_entities/tree/main/dataset/processed/entity_prompts}{ Entity Dataset } from \cite{ferrando2025entity} 
+consists of 150k data from Wikipedia .
+
+\label{app: dataset}
+\begin{table}[H]
+\centering
+\caption{Entity Dataset Statistics for Llama-3.1-8B}
+\label{tab:entity_stats}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Entity Type} & \textbf{Known Count} & \textbf{Unknown Count} & \textbf{Total Count} \\
+\midrule
+song & 5,065 & 27,124 & 33,792 \\
+movie & 6,741 & 56,673 & 65,370 \\
+city & 4,297 & 26,562 & 31,616 \\
+player & 829 & 21,252 & 22,461 \\
+\midrule
+\textbf{TOTAL} & \textbf{16,932} & \textbf{131,611} & \textbf{153,239} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{TriviaQA Dataset}
+\label{app:triviaqa_dataset}
+
+The \href{https://huggingface.co/datasets/mandarjoshi/trivia_qa}{TriviaQA dataset}  \citep{joshi2017triviaqa} includes $\sim$ 130K dataset from Wikipedia and Web. 
+
+\begin{table}[htbp]
+\centering
+\caption{TriviaQA Dataset Statistics for Llama-3.1-8B}
+\label{tab:triviaqa_stats}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Entity Type} & \textbf{Known Count} & \textbf{Unknown Count} & \textbf{Total Count} \\
+\midrule
+web & 51,862 & 18,803 & 76,496 \\
+wikipedia & 45,138 & 12,303 & 61,888 \\
+\midrule
+\textbf{TOTAL} & \textbf{97,000} & \textbf{31,106} & \textbf{138,384} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsection{PopQA Dataset}
+\label{app:popqa_dataset}
+The \href{https://huggingface.co/datasets/akariasai/PopQA}{popQA dataset} \citep{mallen2023popqa} includes 14K dataset consisting of 16 different categories.
+
+\begin{table}[htbp]
+\centering
+\caption{PopQA Dataset Statistics for Llama-3.1-8B}
+\label{tab:popqa_stats}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Entity Type} & \textbf{Known Count} & \textbf{Unknown Count} & \textbf{Total Count} \\
+\midrule
+director & 397 & 1,507 & 1,999 \\
+screenwriter & 337 & 1,559 & 1,999 \\
+genre & 340 & 1,168 & 1,619 \\
+producer & 170 & 1,271 & 1,520 \\
+author & 350 & 1,101 & 1,514 \\
+composer & 191 & 747 & 978 \\
+country & 499 & 243 & 838 \\
+capital & 508 & 112 & 645 \\
+placeofbirth & 33 & 542 & 584 \\
+father & 165 & 373 & 570 \\
+sport & 136 & 392 & 547 \\
+occupation & 82 & 433 & 532 \\
+capitalof & 214 & 125 & 363 \\
+religion & 71 & 222 & 338 \\
+mother & 46 & 131 & 187 \\
+color & 26 & 5 & 34 \\
+\midrule
+\textbf{TOTAL} & \textbf{3,565} & \textbf{9,931} & \textbf{14,267} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+\subsection{WorldCuisines Dataset}
+\label{app:WorldCuisines_dataset}
+
+We sub-select the English portion (lang="en") of the task1 train data from the \href{https://huggingface.co/datasets/worldcuisines/vqa}{WorldCuisines dataset}  \citep{winata2024worldcuisines}.
+
+\begin{table}[htbp]
+\centering
+\caption{WorldCuisines-VQA for Qwen-2.5-VL-7B}
+\label{tab:cuisine_stats}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Entity Type} & \textbf{Known Count} & \textbf{Unknown Count} & \textbf{Total Count} \\
+\midrule
+WorldCuisines & 2281 & 23,964 & 27,000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+%\subsection{Landmark Dataset}
+%\label{app:landmark_dataset}
+
+%We use the first 27,000 data from the %\href{https://huggingface.co/datasets/andito/google-landmarks}%{Landmarks dataset}  \citep{weyand2020googlelandmarksdatasetv2}.
+
+%\begin{table}[htbp]
+%\centering
+%\caption{Landmark-VQA for Qwen-2.5-VL-7B}
+%\label{tab:cuisine_stats}
+%\begin{tabular}{lrrr}
+%\toprule
+%\textbf{Entity Type} & \textbf{Known Count} & \textbf{Unknown Count} & \textbf{Total Count} \\
+%\midrule
+%Landmarks & 1138 & 8564 & 10,000 \\
+%\bottomrule
+%\end{tabular}
+%\end{table}
+
+
+\newpage
+\section{Metrics for Performance and Cluster Separation}
+\label{app:metric}
+
+
+\subsection{Refusal Rate}
+\label{app:refusal_rate}
+For a model completion c\_k in response to an \known{known query}, refusal\_score(c\_k) = 1 if c contains at least one “refusal substring”; otherwise refusal\_score(c\_k) = 0.  We follow \cite{arditi2024refusal} to check  “Abstain Rate”.  Note that the substring comparison is not sensitive to capitalization, and checks that the phrases are contained anywhere in the completion, not just at the start. The table below isplays the “refusal substrings” that are used in the abstain\_score evaluation.
+
+
+\begin{tcolorbox}[colback=gray!10,colframe=black,title=Refusal Substrings]
+[
+    "doesn't have much information",
+    "is not in my knowledge base",
+    "is not in my database",,
+    "without knowing",
+    "i can only find",
+    "unable to identify",
+    "does not contain any",
+    "not discernible",
+    "is not known",
+    "provide more detailed",
+    "need more specific",
+    "provide more details",
+    "cannot confirm",
+    "without additional context or information",
+    "without more information",
+    "not sufficient to",
+    "don't have access",
+    "not sufficient to identify",
+    "not sufficient to determine",
+    "not possible to identify",
+    "cannot be determined",
+    "cannot be identified",
+    "not enough to identify",
+    "not possible to determine",
+    "difficult to accurately identify",
+    "difficult to identify",
+    "difficult to",
+    "does not provide",
+    "does not provide direct information",
+    "not clearly indicate",
+    "not typically listed on public",
+    "not typically listed on Wikipedia",
+    "not publicly available information",
+    "not readily available",
+    "do not have",
+    "do not have information",
+    "i need more information",
+]
+\end{tcolorbox}
+
+
+\subsection{Hallucination Rate}
+\label{app:hallucination_rate}
+
+For a model completion c\_u in response to an \unknown{unknown query}, hallucination\_score(c\_u) = 0 if c contains at least one “abstain substring”; otherwise hallucination\_score(c\_u) = 1 . 
+
+
+\subsection{Accuracy}
+\label{app:accuracy}
+
+
+We define accuracy as the model's answer with respect to ground truth. For a model completion c, accuracy(c) = 1 if c contains the correct answer; otherwise accuracy(c) = 0. Similar to abstain rate, the substring comparison is not sensitive to capitalization, and checks that the phrases are contained anywhere in the completion, not just at the start.
+
+\subsection{Silhouette Score}
+\label{app:silhouette}
+
+To quantify the separation between clusters of known and unknown queries, we use the Silhouette score~\citep{rousseeuw1987silhouettes}, a standard metric that measures how similar an object is to its own cluster (cohesion) compared to other clusters (separation). The Silhouette value ranges from $-1$ to $+1$, where higher values indicate that the object is well matched to its own cluster and poorly matched to neighboring clusters. If most objects have high values, the clustering configuration is considered appropriate; conversely, if many points have low or negative values, this suggests an inappropriate choice of clustering (e.g., too many or too few clusters).
+
+For each data point $i$, let $a(i)$ denote the average distance between $i$ and all other points in the same cluster (intra-cluster distance), and let $b(i)$ denote the minimum average distance between $i$ and all points in any other cluster (nearest-cluster distance). The Silhouette coefficient for point $i$ is then defined as:
+\[
+s(i) = \frac{b(i) - a(i)}{\max\{a(i), b(i)\}}.
+\]
+
+The overall Silhouette score is the mean of $s(i)$ across all points:
+\[
+S = \frac{1}{N} \sum_{i=1}^{N} s(i),
+\]
+where $N$ is the number of data points. Higher values of $S$ indicate clearer separation between clusters. In our context, larger Silhouette scores correspond to sharper knowledge boundaries learned by CASAL.
+
+\newpage
+
+\section{Knowledge Probing}
+\label{app:probing}
+
+For each input $x \in \mathcal{D}$, we sample $k=10$ completions for each query with the following configuration:  temperature=0.7, with nucleus sampling (p=0.8) and top-K sampling ($\text{top}\_k=20$).
+
+
+If at least $\tau=7$ generations are correct, $x$ is labeled as \known{known}; if at least $\tau=7$ are incorrect, it is labeled as \unknown{unknown}. This procedure yields two disjoint subsets: \known{$\mathcal{D}_{k}$} and \unknown{$\mathcal{D}_{u}$}, which are later used for contrastive steering. 
+
+We adopt a relatively strict threshold of $\tau=7$ to ensure high-confidence separation: the model abstains only on knowledge it does not possess, and responds only when it demonstrates consistent correctness. This choice reduces ambiguous cases near the decision boundary. We selected $\tau=7$ empirically, after observing that looser thresholds (e.g., $\tau=5$ or $\tau=6$) produced noisier separations. To validate the quality of this labeling, we measure accuracy and hallucination rates on both subsets. As expected, the model achieves high accuracy on \known{$\mathcal{D}_{k}$} and very low accuracy on \unknown{$\mathcal{D}_{u}$}, while also exhibiting high hallucination rates on \unknown{$\mathcal{D}_{u}$}. These patterns hold consistently across all three datasets we tested, with results summarized in Figures~\ref{fig:accuracy_popqa}, \ref{fig:accuracy_entityqa}, and \ref{fig:accuracy_triviaqa}.
+
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{0.7\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/baseline/popqa_llama.png}
+    \end{minipage}
+    \hfill
+    \caption{\textbf{Hallucination and accuracy rates across question categories on PopQA.}
+    (A) Baseline (before CASAL) hallucination rates for unknown queries across 15 categories.
+    (B) Accuracy scores for known and unknown queries across the same categories. A strict threshold of $\tau=7$ was used to label queries, ensuring high-confidence separation: the model answers only when consistently correct and abstains otherwise. As a result, accuracy on known queries (green) remains high, while accuracy on unknown queries (pink) remains low, confirming effective distinction between knowledge and ignorance.}
+    \label{fig:accuracy_popqa}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth]{figures/baseline/entityqa_llama.png}
+    \caption{\textbf{Hallucination and accuracy rates across question categories on EntityQA.}
+    (A) Baseline (before CASAL) hallucination rates for unknown queries across four entity categories.
+    (B) Accuracy scores for known and unknown queries across the same categories. With the strict threshold $\tau=7$, ambiguous cases are filtered out, leading to a sharp separation: accuracy is consistently high on known queries (green) and remains near-zero on unknown queries (pink).}
+    \label{fig:accuracy_entityqa}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{0.6\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/baseline/triviaqa_llama.png}
+    \end{minipage}
+    \hfill
+    \caption{\textbf{Hallucination and accuracy rates across question categories on TriviaQA.}
+    (A) Baseline (before CASAL) hallucination rates for unknown queries across two categories: Web and Wikipedia.  
+    (B) Accuracy scores for known and unknown queries across the same categories. The strict threshold $\tau=7$ enforces a conservative decision boundary, accuracy is consistently high on known queries (green) and remains low on unknown queries (pink).}
+    \label{fig:accuracy_triviaqa}
+\end{figure}
+
+
+\subsection{Knowledge Probing Threshold}
+\label{app:threshold}
+
+We systematically evaluated different threshold values $\tau \in \{3, 4, 5, 6, 7, 8\}$ and found that hallucination reduction performance remains robust across this range. We adopt a relatively strict threshold of $\tau=7$ to ensure high-confidence separation: the model abstains only on knowledge it does not possess, and responds only when it demonstrates consistent correctness. This choice reduces ambiguous cases near the decision boundary.
+
+The bar charts demonstrate that while stricter thresholds (higher $\tau$) reduce the size of the known set, they consistently maintain high accuracy ($>77\%$) on known questions and low hallucination rates ($<8\%$) on unknown questions. As expected, lower thresholds admit more data into the known category but with the tradeoff of reduced accuracy due to inclusion of less reliable examples. Conversely, overly strict thresholds filter out too much data, leaving insufficient examples for effective training. Our choice of $\tau=7$ strikes an optimal balance between boundary precision and training data sufficiency, ensuring clean separation while retaining adequate data for robust model training.
+
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/probing_threshold/probing_threshold.png}
+    \end{minipage}
+    \hfill
+    \caption{ \textbf{CASAL performance tested on different threshold for knowledge probing}. Each panel shows the classification of questions into known (green, $\geq \tau$/10 correct) and unknown (pink, $\geq \tau$/10 wrong) categories, along with the resulting \known{accuracy on known questions} and \unknown{hallucination rate on unknown questions}.}
+    \label{fig:threshold}
+\end{figure}
+
+
+\section{Models}
+\label{app:model}
+
+For experiments with sparse Mixture-of-Experts (MoE) model, we use OLMoE-1B-7B, which has 7 billion (B) parameters but uses only 1B per input token. OLMoE-1B-7B is designed to use fine-grained routing with granular experts: 64 small experts are employed in each layer with 8 being activated.
+
+
+The full list of the models in the paper are detailed in Table \ref{tab: models}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Model Type} & \textbf{Model Name} & \textbf{Model Size} & \textbf{Link} \\ \hline
+Dense, text-only & meta-llama/Llama-3.1-8B & 8B & \href{https://huggingface.co/meta-llama/Llama-3.1-8B}{HF Link} \\ \hline
+Vision-language & Qwen/Qwen2.5-VL-7B-Instruct & 7B & \href{https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct}{HF Link} \\ \hline
+MoE & allenai/OLMoE-1B-7B-0924-Instruct & 7B(total)-1B(ACTIVE) & \href{https://huggingface.co/allenai/OLMoE-1B-7B-0924}{HF Link} \\ \hline
+\end{tabular}
+\caption{Diversity of Models Tested on CASAL}
+\label{tab: models}
+\end{table}
+
+\section{Ablation}
+\label{app:ablation}
+
+ Crucially, CASAL \textbf{only fine-tunes a sub-module from a single layer}, making it highly compute- and data-efficient. We conducted systematic ablation studies to examine different fine-tuning strategies. Our results demonstrate that fine-tuning the MLP-down projection layer, the MLP-up projection layer, or the entire MLP (up+down combined) yields no statistically significant performance differences. 
+ 
+\subsection{Different sub-modules for training}
+\label{app:submodule}
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/submodule/submodule.png}
+    \end{minipage}%
+    \hfill
+\label{fig:submodule}
+\caption{\textbf{Ablation study on MLP sub-module fine-tuning strategies.} 
+(A) Training  (CASAL) only the MLP up-projection layer achieves 88.0\% mean accuracy on known samples with 6.9\% mean hallucination rate on unknown samples.   
+(B) Training  (CASAL)only the MLP down-projection layer achieves 86.0\% mean accuracy on known samples with 3.7\% mean hallucination rate on unknown samples.
+(C) Training  (CASAL) the entire MLP (both up and down projections) achieves mean 88.4\% accuracy on known samples with 2.7\% mean hallucination rate on unknown samples. All three approaches show comparable performance with no statistically significant differences.}
+\end{figure}
+
+
+
+\section{Hyper-parameter Search for CASAL Training}
+\label{app:hyper}
+
+The two most important hyper-parameters (other than layer selection) for CASAL training are: 
+
+1. Learning rate. 
+2. Steering strength ($\alpha$).
+3. Steering layer (Refer to Layer Selection Section \ref{app:select_layer})
+
+
+
+\subsection{Learning Rate}
+\label{app:learning_rate}
+
+We conducted a layer-wise hyperparameter search to identify a stable learning rate for training. As shown in Figure~\ref{fig:lr}, higher learning rates (e.g., $5\!\times\!10^{-3}$) produced unstable behavior, with elevated hallucination rates and spikes in refusal. In contrast, moderate learning rates (e.g., $1\!\times\!10^{-3}$, $5\!\times\!10^{-4}$, $1\!\times\!10^{-4}$) yielded stable and consistent reductions in hallucinations below the baseline (gray stars), while avoiding excessive increases in refusal. Very small learning rates (e.g., $5\!\times\!10^{-5}$, $1\!\times\!10^{-5}$) produced behavior close to the baseline but offered little additional benefit.  
+
+Balancing stability with effectiveness, we adopt a learning rate of $1\!\times\!10^{-3}$ for training the Llama-3.1-8B-Instruct model.
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/lr/lr.png}
+    \end{minipage}%
+    \hfill
+\caption{Learning Rate}
+\label{fig:lr}
+\caption{\textbf{Layer-wise hyperparameter search for learning rate.}  
+(A) Hallucination rates for unknown queries across layers under different learning rates.   
+(B) Refusal rates for known queries across layers.}
+
+\end{figure}
+
+
+\subsection{Steering Strength}
+\label{app:steering_strength}
+
+We adopt a steering strength of $4$, as it provides a good balance: strong enough to substantially reduce hallucinations, while avoiding over-refusal on known queries (Figure~\ref{fig:strength}).
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/steering_strength/strength.png}
+    \end{minipage}%
+    \hfill
+\caption{Strength}
+\label{fig:strength}
+\caption{\textbf{Layer-wise hyperparameter search for steering strength.}  
+(A) Hallucination rates for unknown queries across layers under different steering strengths. Stronger steering (e.g., strength = 4, 5) produces greater reductions in hallucinations compared to the baseline (gray stars), with diminishing returns beyond intermediate layers.  
+(B) Refusal rates for known queries across layers. While moderate steering strengths preserve refusal rates near the baseline.}
+
+\end{figure}
+
+In conclusion, for training the text-only LLM (llama-3.1-8B-Instruct), we use the following parameters:
+
+\begin{itemize}
+\item 1. learning rate (lr) = 1e-3
+\item 2. steering layer (L) = 16
+\item 3. steering strength ($\alpha$) = 4
+\item 4. number of epoch (e) = 3
+\end{itemize}
+
+\section{SFT, DPO and GRPO Training}
+\label{app:baseline}
+
+\paragraph{SFT Data construction.}
+We curate chat examples from two sources: \known{positive} completions (answers the model should provide) and \unknown{negative} completions (cases where the model should not refuse). To ensure label quality, we apply simple filters:
+\begin{itemize}
+    \item include a \unknown{negative} sample only if its steering-derived refusal score equals $1$;
+    \item include a \known{positive} sample only if its refusal score equals $0$.
+\end{itemize}
+
+\paragraph{SFT Training.} We train with the \texttt{TRL} \texttt{SFTTrainer} using a cosine LR schedule,  and learning rate = 0.0004. When enabled, we attach LoRA adapters (rank=8, dropout $0.05$, $\alpha=8$). 
+
+\paragraph{DPO Data construction.}
+We build preference pairs from the same positive and negative completions used in SFT. For each prompt, we form a tuple $\langle x, y^{+}, y^{-}\rangle$ where:
+\begin{itemize}
+    \item $y^{+}$ (preferred response) is drawn from \known{positive} completions with refusal score $=0$,
+    \item $y^{-}$ (dispreferred response) is drawn from \unknown{negative} completions with refusal score $=1$.
+\end{itemize}
+This yields preference datasets in the format required by \texttt{TRL}'s \texttt{DPOTrainer}.  
+
+\paragraph{DPO Training.} 
+We apply Direct Preference Optimization (DPO), which directly optimizes the policy $\pi_\theta$ against a fixed reference model $\pi_\text{ref}$ by minimizing
+\[
+\mathcal{L}_\text{DPO} = -\mathbb{E}_{(x, y^+, y^-)}\!\left[\log\sigma\!\Big(\beta\big(\log\tfrac{\pi_\theta(y^+|x)}{\pi_\text{ref}(y^+|x)} - \log\tfrac{\pi_\theta(y^-|x)}{\pi_\text{ref}(y^-|x)}\big)\Big)\right],
+\]
+where $\beta$ controls the strength of preference alignment.  
+Training uses \texttt{TRL}'s \texttt{DPOTrainer} with a cosine learning rate schedule and learning rate $= 4\text{e}{-4}$. When enabled, we attach LoRA adapters (rank $=8$, dropout $0.05$, $\alpha=8$).  
+
+
+\section{Compute Cost of Calculation (FLOPs per Token)}
+\label{app:flops}
+
+As in previous works \citep{kaplan2020scalinglawsneurallanguage},  we parameterize the Transformer architecture using the following hyperparameters:
+
+\begin{itemize}
+
+\item $n_{\text{layer}} : $ number of layers 
+\item $d_{\text{model}} : $ dimension of the residual stream 
+\item $d_{\text{ff}} : $ dimension of the intermediate feed-forward layer
+\item $d_{\text{attn}}: $ dimension of the attention output
+\item $n_{\text{heads}} : $ number of attention heads per layer 
+\item $n_{\text{ctx}} : $ number of tokens in the input context
+\item $r : $ low rank for parameter-efficient finetuning with LoRA
+\end{itemize}
+
+\subsection{Full-parameter finetuning}
+\label{app:full_param}
+
+ Detailed per-operation parameter and compute count for complete finetuning (non-embedding) is included in Table \ref{tab:flops_table}:
+
+\begin{table}[htbp]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Operation} & \textbf{Parameters} & \textbf{FLOPs per Token} \\ \hline
+Embed & $n_{\text{vocab}} d_{\text{model}}$ & ---  \\ \hline
+Attention: QKV & $n_{\text{layer}}d_{\text{model}} 3d_{\text{attn}}$ & $2n_{\text{layer}}d_{\text{model}}3d_{\text{attn}}$ \\ \hline
+Attention: Mask & --- & $2n_{\text{layer}}n_{\text{ctx}}d_{\text{attn}}$ \\ \hline
+Attention: Project & $n_{\text{layer}}d_{\text{attn}}d_{\text{model}}$ & $2n_{\text{layer}}d_{\text{attn}}d_{\text{embd}}$ \\ \hline
+Feedforward & $n_{\text{layer}} 2d_{\text{model}}d_{\text{ff}}$ & $2n_{\text{layer}}2d_{\text{model}}d_{\text{ff}}$ \\ \hline
+De-embed & $n_{\text{vocab}} d_{\text{model}}$ & --- \\ \hline
+\textbf{Total} & $N = 2d_{\text{model}}n_{\text{layer}}(2d_{\text{attn}} + d_{\text{ff}})$ & $C_{\text{forward}} \approx 2N + 2n_{\text{layer}}n_{\text{ctx}}d_{\text{attn}}$ \\ \hline
+\end{tabular}
+\caption{\textbf{Parameter counts and compute (forward pass) estimates} for a Transformer model. Sub-leading terms such as nonlinearities, biases, and layer normalization are omitted. Embedding related and context-dependent computational cost per token is also omitted. }
+\label{tab:flops_table}
+\end{table}
+
+For contexts and models with $d_{\text{model}} > \frac{n_{\text{ctx}}}{12}$, the context-dependent 
+computational cost per token is a relatively small fraction of the total compute. Following \cite{kaplan2020scalinglawsneurallanguage},
+since we primarily study models where $d_{\text{model}} > \frac{n_{\text{ctx}}}{12}$, we do not 
+include context-dependent terms in our training compute estimate. 
+Accounting for the backwards pass (approximately twice the compute as the forwards pass), 
+ the estimated non-embedding compute as: $C_{
+ \text{full}
+ } \approx 6N  \text{floating point operators per training token.}$
+
+\subsection{ Comparing full-parameter finetune and CASAL finetune} 
+\label{app:casal_comparison}
+
+Crucially, during CASAL training\footnote{Note that only FLOPs during the stage 3 (casal training stage) are included in the calculation.}, \textbf{ fine-tuning one single module of a FFN layer is needed} (either up or down projections) and leaves all other layers frozen, 
+the trainable parameters correspond to one single FFN layer:
+
+\[
+N_{\text{CASAL}} = d_{\text{model}}d_{\text{ff}} 
+\]
+
+From Table~\ref{tab:flops_table}, the total non-embedding and context-independent parameters for full-finetuning are:
+
+\[
+N_{\text{total}} = 2d_{\text{model}}n_{\text{layer}}\left( 2d_{\text{attn}} + d_{\text{ff}} \right) 
+\]
+
+Thus, the ratio between CASAL parameters and total parameters is:
+
+\[
+\frac{N_{\text{CASAL}}}{N_{\text{total}}} 
+= \frac{ d_{\text{model}}d_{\text{ff}} }{ 2d_{\text{model}}n_{\text{layer}}\left( 2d_{\text{attn}} + d_{\text{ff}} \right) }
+= \frac{ d_{\text{ff}} }{ 2n_{\text{layer}} \left( 2d_{\text{attn}} + d_{\text{ff}} \right) } 
+\]
+
+\paragraph{Taking LLaMA-3.1-8B for example:}
+ $d_{\text{model}} = d_{\text{attn}} = 4096$, $d_{\text{ff}} = 14336$, and $n_{\text{layer}} = 32$:
+
+\[
+\frac{N_{\text{CASAL}}}{N_{\text{total}}} 
+= \frac{14336}{2 \times 32 \times \left( 2 \times 4096 + 14336 \right)} 
+\approx 0.009943 \quad (\mathbf{0.994\%}).
+\]
+
+Therefore, CASAL only uses $\sim 1\%$ of parameter comparing to full fine-tuning and the advantage of CASAL  increases as the model becomes wider (larger value of $d_{\text{model}}$) and deeper (larger value for $n_{\text{layer}}$)
+
+As for full-finetuning, we do not include context-dependent terms in our training compute estimate. Accounting for the backwards pass (approximately twice the compute as the forwards pass), the estimated non-embedding compute as: $C_{\text{CASAL}} \approx 6N_{\text{CASAL}}$ floating point operators per training token. 
+
+Taken together,  $C_{\text{CASAL}}$ is approximately  1\% of  $C_{\text{full}}$. 
+
+\subsection{LoRA finetuning}
+\label{app:lora}
+
+
+For a standard linear layer with input dimension $d_{\text{in}}$ and output dimension $d_{\text{out}}$, LoRA introduces two smaller matrices of rank $r$. For each large dense weight matrix 
+$W \in \mathbb{R}^{d_{in} \times d_{out}}$ 
+we replace it with two low-rank matrices 
+$A \in \mathbb{R}^{d_{in} \times r}$ 
+and 
+$B \in \mathbb{R}^{r \times d_{out}}$, 
+so the parameter count becomes $r(d_{in}+d_{out})$ instead of $d_{in}d_{out}$. The computational cost per token (forward only)  for the adapter is approximately:
+$$ \text{FLOPs}_{\text{LoRA}} = 2r(d_{\text{in}} + d_{\text{out}}) $$
+
+
+We assume a standard architecture where the attention dimension is equal to the model's hidden dimension, i.e., $d_{\text{attn}} = d_{\text{model}}$. Based on the calculations in Table \ref{tab:flops_table}, we apply LoRA to the main weight matrices within the Transformer architecture and summarize it in Table \ref{tab:flops_table_lora}.
+
+\begin{table}[htbp]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Operation} & \textbf{Parameters} & \textbf{FLOPs per Token} \\ \hline
+
+Attention: QKV & $n_{\text{layer}}3r(d_{\text{attn}} + d_{\text{model}})$ & $2n_{\text{layer}}3r(d_{\text{attn}} + d_{\text{model}})$ \\ \hline
+Attention: Mask & --- & $2n_{\text{layer}}n_{\text{ctx}}d_{\text{attn}}$ \\ \hline
+Attention: Project & $n_{\text{layer}}r(d_{\text{attn}} + d_{\text{model}})$ & $2n_{\text{layer}}r(d_{\text{attn}} + d_{\text{model}})$ \\ \hline
+Feedforward & $n_{\text{layer}} 2r(d_{\text{model}} + d_{\text{ff}})$ & $2n_{\text{layer}}2r(d_{\text{model}}d_{\text{ff})}$ \\ \hline
+
+\textbf{Total} & $N_{LoRA} = 2d_{\text{model}}n_{\text{layer}}r(2d_{\text{attn}} + d_{\text{ff}})$ & $C_{\text{forward}} \approx 2N_{LoRA} + 2n_{\text{layer}}n_{\text{ctx}}d_{\text{attn}}$ \\ \hline
+\end{tabular}
+\caption{\textbf{Parameter counts and compute (forward pass) estimates} for LoRA (only the adapter part). Sub-leading terms such as nonlinearities, biases, and layer normalization are omitted.  The context-dependent computational cost per token is also omitted.}
+\label{tab:flops_table_lora}
+\end{table}
+
+A complete forward pass in a LoRA-enabled model involves computing outputs from two parallel paths and summing them. The total FLOPs per token is the sum of the costs of these two paths:
+
+\begin{itemize}
+
+\item \textbf{Base Model Forward FLOPs:}
+Based on the provided table ($C_{\text{forward}} \approx 2N$), the forward pass cost for the original model's non-embedding layers ($C_{\text{base\_forward}}$) is:
+\begin{equation}
+    C_{\text{base\_forward}} = n_{\text{layer}} \cdot (8d_{\text{model}}d_{\text{attn}} + 4d_{\text{model}}d_{\text{ff}})
+\end{equation}
+
+\item \textbf{LoRA Adapter Forward FLOPs:}
+The forward pass cost for the lightweight LoRA adapters ($C_{\text{lora\_forward}}$) is:
+\begin{equation}
+    C_{\text{lora\_forward}} = 4d_{\text{model}}n_{\text{layer}}r(2d_{\text{attn}} + d_{\text{ff}})
+\end{equation}
+
+\end{itemize}
+
+\paragraph{Total Forward Pass FLOPs}
+The total computational cost for one complete forward pass is the sum of the two paths:
+\begin{equation}
+    C_{\text{total\_forward}} = C_{\text{base\_forward}} + C_{\text{lora\_forward}}
+\end{equation}
+
+
+
+\paragraph{Total Backward Pass FLOPs} The compute cost of the backward pass is approximately twice the forward pass cost of the components whose weights are being updated. In this case, only the LoRA adapters.
+$$ C_{\text{loral\_backward}} \approx 2 \cdot C_{\text{lora\_forward}} $$
+
+The total compute cost for one fine-tuning with LoRA ($C_{\text{finetune}}$) is therefore the sum of the forward and backward passes:
+\begin{align}
+    C_{\text{LoRA}} &= C_{\text{total\_forward}} + C_{\text{lora\_backward}} \nonumber \\
+    &= (C_{\text{base\_forward}} + C_{\text{lora\_forward}}) + (2 \cdot C_{\text{lora\_forward}}) \nonumber \\
+    C_{\text{LoRA}} &= C_{\text{base\_forward}} + 3 \cdot C_{\text{lora\_forward}}
+\end{align}
+
+\subsection{Comparing full-parameter finetune and LoRA finetune}
+\label{app:lora_comparison}
+
+
+
+As detailed in table \ref{tab:flops_table_lora}, for a Transformer with LoRA (rank $r$), the total trainable parameters become:
+\begin{equation}
+\begin{aligned}
+N_{\text{LoRA}} &= n_{\text{layer}} \left[ 3r(d_{\text{model}} + d_{\text{attn}}) + r(d_{\text{attn}} + d_{\text{model}}) + 2r(d_{\text{model}} + d_{\text{ff}}) \right] \\
+&= 2d_{\text{model}}n_{\text{layer}}r(2d_{\text{attn}} + d_{\text{ff}})
+\end{aligned}
+\end{equation}
+
+
+The ratio of LoRA parameters to the full parameter count is:
+
+\begin{equation}
+\frac{N_{\text{LoRA}}}{N_{\text{total}}} 
+= \frac{2d_{\text{model}}n_{\text{layer}}r(2d_{\text{attn}} + d_{\text{ff}})}
+{ 2d_{\text{model}} n_{\text{layer}} \left( 2d_{\text{attn}} + d_{\text{ff}} \right) } 
+\end{equation}
+
+\begin{equation}
+\frac{N_{\text{LoRA}}}{N_{\text{total}}} 
+= \frac{4r(d_{\text{model}} + d_{\text{attn}}) + 2r(d_{\text{model}} + d_{\text{ff}})}
+{ 2d_{\text{model}} \left( 2d_{\text{attn}} + d_{\text{ff}} \right) }
+\end{equation}
+
+For GPT-style models (including llama-3.1-8b used in the paper) where $d_{\text{model}} = d_{\text{attn}}$ and $d_{\text{ff}} \approx 4d_{\text{model}}$:
+\begin{equation}
+\begin{aligned}
+\frac{N_{\text{LoRA}}}{N_{\text{total}}} 
+&= \frac{4r(2d_{\text{model}}) + 2r(5d_{\text{model}})}{ 2d_{\text{model}} (6d_{\text{model}}) } \\
+&= \frac{8rd_{\text{model}} + 10rd_{\text{model}}}{12d_{\text{model}}^2} \\
+&= \frac{18r}{12d_{\text{model}}} \\
+&= \frac{3r}{2d_{\text{model}}}
+\end{aligned}
+\end{equation}
+
+\paragraph{Taking LLaMA-3.1-8B for example:} With $d_{\text{model}}=4096$ and $r=8$:
+\begin{equation}
+\frac{N_{\text{LoRA}}}{N_{\text{total}}} \approx \frac{3 \times 8}{2 \times 4096} \approx 0.00293 \quad (\mathbf{0.29\%})
+\end{equation}
+
+\paragraph{Full Fine-tuning}
+A full fine-tuning step involves a forward pass and a backward pass where gradients are computed for all model parameters. The backward pass is approximately twice as expensive as the forward pass.
+\begin{equation}
+    C_{\text{Full}} \approx C_{\text{base\_forward}} + (2 \cdot C_{\text{base\_forward}}) = 3 \cdot C_{\text{base\_forward}}
+\end{equation}
+
+\paragraph{LoRA Fine-tuning}
+In LoRA fine-tuning, the backward pass only computes gradients for the small adapter weights.
+\begin{equation}
+    C_{\text{LoRA}} = C_{\text{base\_forward}} + 3 \cdot C_{\text{lora\_forward}}
+\end{equation}
+where $C_{\text{base\_forward}}$ is the FLOPs for the base model's forward pass and $C_{\text{lora\_forward}}$ is the FLOPs for the LoRA adapter's forward pass.
+
+
+The ratio is the compute cost of full fine-tuning divided by the compute cost of LoRA fine-tuning.
+\begin{equation}
+    \text{Ratio} = \frac{C_{\text{Full}}}{C_{\text{LoRA}}} = \frac{3 \cdot C_{\text{base\_forward}}}{C_{\text{base\_forward}} + 3 \cdot C_{\text{lora\_forward}}} \approx \textbf{3}
+\end{equation}
+Since the term $3 \cdot C_{\text{lora\_forward}}$ is much smaller than $C_{\text{base\_forward}} $ ( $C_{\text{lora\_forward}}$ is only $0.29 \%$ of $C_{\text{base\_forward}} $ ),  which brings the overall ratio close to 3. Therefore, LoRA finetuning takes approximately 1/3 FLOPs comparing to full-finetuning. Since CASAL takes about 1 \% of the FLOPs comparing to full-finetune ,  CASAL is about \textbf{30x times} more compute efficient than LoRA.
+
+
+\newpage
+\section{Multimodal Model}
+\label{app:vision}
+
+% 
+% \newpage
+\subsection{Example Question and Answers from Vision-Language Model}
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{iclr2026/figures/cuisine/Bratwurst.jpg}
+    \caption{Example Known Image \# 1}
+    \label{fig:moe}
+\end{figure}
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{iclr2026/figures/cuisine/bento.jpg}
+    \caption{Example Known Image \# 2}
+    \label{fig:moe}
+\end{figure}
+
+% Main case study box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \known{Known} Question \#1 }
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{How do locals in Germany call this dish?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#1:}
+The dish in the picture is a \known{"Bratwurst"}, which is a type of grilled sausage that is popular in Germany. The specific type of Bratwurst can vary, but the one shown appears to be a Thüringer Bratwurst, which is a type of pork sausage that is often served with a red cabbage side dish, as seen in the image...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#2:}
+The dish in the picture appears to be a variation of \known{"Bratwurst,"} a popular German dish consisting of grilled sausages. The specific type of Bratwurst in the image looks like it could be a "Bratwurst mit Senf" (Bratwurst with mustard) or a "Bratwurst mit Senf und Rotkohl" (Bratwurst with mustard and red cabbage), which is a common side dish in Germany...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#3:}
+The dish in the picture is a classic German dish called "Bratwurst mit Senf und Würstchen" (Grilled sausage with mustard and small sausages). However, the specific dish in the picture appears to be a variation of \known{"Bratwurst"} (grilled sausage), often served with a side of vegetables or sauerkraut...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#4:}
+The dish in the picture is called "\known{Bratwurst} mit Senf und Käse" (Grilled sausage with mustard and cheese) in Germany. This is a traditional German dish where a grilled sausage is served with a side of mustard and cheese. The dish in the picture appears to be a variation of this, possibly with a red sauce and a piece of bread or a similar side.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#5:}
+The dish in the picture appears to be a type of \known{bratwurst}, which is a German sausage. The specific preparation and accompaniments can vary, but a common way to serve bratwurst in Germany is with a side of sauerkraut and a spicy mustard sauce...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#6:}
+The dish in the picture is called "\known{Bratwurst} mit Rotkohl," which translates to "grilled sausage with red cabbage" in English. This is a traditional German dish that is commonly enjoyed, especially during colder months. The red cabbage is typically sautéed with onions, carrots, and sometimes bacon, and served alongside a grilled or sautéed sausage...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#7:}
+The dish in the picture is called "\known{Bratwurst} mit Gemüse," which translates to "grilled sausage with vegetables" in English. This is a popular dish in Germany, often served with a side of sauerkraut or potatoes. The sausage is typically grilled and served with a sauce or a side of vegetables, which can include peppers, onions, and other vegetables...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#8:}
+The dish in the picture is called "Bratwurst mit Sauerkraut" in German. \known{Bratwurst} is a type of sausage, and Sauerkraut is a fermented cabbage dish. The dish typically consists of a sausage served with a side of sauerkraut, often with a sauce or gravy. It is a popular dish in German cuisine.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#9:}
+The dish in the picture is called "Bratwurst mit Sauerkraut" in German. \known{Bratwurst} is a type of German sausage, and Sauerkraut is a fermented cabbage dish. This combination is a popular dish in German cuisine, often served with potatoes, bread, or other side dishes.
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#10:}
+The dish in the picture is called "Bratwurst mit Rotkohl" in German. \known{Bratwurst} is a type of sausage, and Rotkohl is red cabbage, which is often served with it as a side dish... 
+
+\end{tcolorbox}
+
+
+
+% Main case study box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=lightblue,
+    arc=10pt,
+    boxrule=3pt,
+    left=10pt,
+    right=10pt,
+    top=10pt,
+    bottom=10pt
+]
+% Title box
+\begin{tcolorbox}[
+    colback=white,
+    colframe=darkgray,
+    arc=15pt,
+    boxrule=2pt,
+    left=20pt,
+    right=20pt,
+    top=8pt,
+    bottom=8pt,
+    halign=center
+]
+\Large\textbf{After CASAL Training:\\ Example \known{Known} Question \#2 }
+\end{tcolorbox}
+\vspace{15pt}
+% Query section
+\noindent\faComments \hspace{5pt} \textbf{Query:} \textit{What is this food known as?}
+\vspace{10pt}
+
+% Response section
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#1:}
+The food in the picture is a bento box, which is a traditional Japanese meal consisting of a variety of dishes served in a single container. The specific type of bento shown here appears to be a \"yukkuri bento\" or \"slow bento,\" which is a type of bento that includes a variety of items such as rice, fish, meat, vegetables, and sometimes a soup or dessert. The rice in the picture is topped with sesame seeds, and there are other...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#2:}
+The food in the picture is a type of bento box, which is a traditional Japanese meal served in a box divided into compartments... 
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#3:}
+The food in the picture is a bento box, which is a traditional Japanese meal packed in a lunchbox-style container. The specific type of bento shown here appears to be a \"yakitori\" bento, which includes grilled chicken skewers (yakitori), rice, pickled vegetables, and sometimes a side of pickled cabbage... 
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#4:}
+"The food in the picture is called a \"bento.\" Bento is a traditional Japanese meal that is typically served in a box and includes a variety of food items. The bento in the picture includes: 1. White rice with black sesame seeds on top. 2. Grilled or roasted meat, possibly chicken or pork. 3. A small portion of pickled or grilled vegetables. 4. A side of shredded cabbage and carrots, which could be a type of coleslaw or pickled
+\vspace{8pt}
+
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#5:}
+The food in the picture is called a bento, which is a traditional Japanese meal consisting of a variety of dishes served in a box or tray. The specific bento in the picture includes: 1. Rice with sesame seeds on top. 2. A slice of pickled ginger (gari). 3. A piece of ham (likely hamachi or another type of fish). 4. A portion of stir-fried vegetables. 5. A piece of grilled chicken or pork. 6. A serving...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#6:}
+The meal in the picture is a type of Japanese bento box, which is a traditional Japanese lunchbox that typically includes a variety of foods such as rice, fish, meat, vegetables, and sometimes a soup or dessert...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#7:}
+The food in the picture is a type of Japanese bento box. Specifically, it appears to be a variation of a \"donburi\" bento, which includes a bowl of rice, some grilled or cooked meat (possibly pork or chicken), and some side dishes...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#8:}
+The meal in the picture is a bento box, which is a traditional Japanese lunchbox. The specific type of bento shown appears to be a \"hanpen\" bento. Here's a breakdown of the items...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#9:}
+The food in the picture is a type of bento, which is a traditional Japanese lunchbox. This particular bento includes a variety of dishes commonly found in a Japanese bento box: 1. **Sukiyaki** - The dish in the top right corner appears to be a type of sukiyaki, which is a Japanese dish of thin slices of meat and vegetables in a light soy sauce. 2. **Pickled Vegetables** - The green vegetables in the top left corner...
+
+\vspace{8pt}
+\noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#10:}
+The food in the picture is a bento box, which is a traditional Japanese meal that is typically packed in a box and eaten away from home. The specific bento box in the picture contains a variety of items...
+
+\end{tcolorbox}
+
+% \begin{tcolorbox}[
+%     colback=white,
+%     colframe=lightblue,
+%     arc=10pt,
+%     boxrule=3pt,
+%     left=10pt,
+%     right=10pt,
+%     top=10pt,
+%     bottom=10pt
+% ]
+% % Title box
+% \begin{tcolorbox}[
+%     colback=white,
+%     colframe=darkgray,
+%     arc=15pt,
+%     boxrule=2pt,
+%     left=20pt,
+%     right=20pt,
+%     top=8pt,
+%     bottom=8pt,
+%     halign=center
+% ]
+% \Large\textbf{After CASAL Training:\\ Example \unknown{Unknown} Question \#1 }
+% \end{tcolorbox}
+% \vspace{15pt}
+% % Query section
+% \noindent\faComments \hspace{5pt} \textbf{Query:} \textit{Can you identify the place in the picture?}
+% \vspace{10pt}
+
+% % Response section
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#1:}
+% The image shows a lecture hall or conference room. It is designed for presentations or lectures, with rows of desks and chairs facing a stage or a presentation area at the front. The room has a modern design with wooden paneling on the walls and a ceiling with recessed lighting. There are screens or monitors visible on the stage, which suggests that the room is equipped for multimedia presentations. The presence of a podium and what appears to be a projector or screen setup indicates that this space is used for formal presentations or educational purposes. \unknown{Without more specific details, it's not possible to determine the exact location or institution}, but it is clearly a professional setting designed for large group gatherings or lectures.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#2:}
+% The image shows an interior view of a lecture hall or conference room. It appears to be a modern setup with wooden paneling on the walls and ceiling, and a series of desks arranged in rows facing a front area where a presentation might be given. There are also audio-visual equipment such as a projector screen and a podium, indicating it's designed for lectures, presentations, or seminars. \unknown{Without additional context, it's not possible to determine the specific location or institution where this lecture hall is situated}. The design suggests it could be part of a university, conference center, or similar facility.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#3:}
+% The image depicts an auditorium or lecture hall. It appears to be a modern facility with tiered seating, wooden paneling, and a large screen at the front, which is likely used for presentations or lectures. The room is well-lit, suggesting it is designed for professional or academic use. \unknown{Without additional context or specific landmarks, it's difficult to determine the exact location or institution where this room is located}. However, it is clearly a space designed for group lectures, presentations, or seminars.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#4:}
+% The image shows a lecture hall or conference room. It features rows of desks and chairs, a podium on the left, a large screen at the front, and a stage area. The room is designed for presentations, lectures, or seminars. \unknown{Without additional context or specific identifiers, it's not possible to determine the exact location or institution where this room is situated}. The design suggests it could be part of an academic institution, a corporate conference center, or a similar venue used for large group gatherings.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#5:}
+% The image depicts a lecture hall or conference room, characterized by its large, tiered seating arrangement, wooden paneling on the walls, and a podium at the front. Such a setting is typically found in educational institutions, corporate settings, or other venues designed for lectures, seminars, or meetings. The absence of people and the organized layout suggest it is not currently in use for an event. \unknown{The specific location cannot be determined from the image alone without additional context or identifiable landmarks}.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#6:}
+% The image depicts a lecture hall or conference room. It features a long, rectangular table in the center with multiple chairs arranged around it, which is typical for a lecture or seminar setting. There is a podium on the left side, likely for a speaker, and a screen or projection area at the back. The room has a modern design with wooden walls and a ceiling with recessed lighting. The presence of a sound system and the overall setup suggest it is designed for formal presentations or lectures. \unknown{ Without additional context, it's not possible to determine the specific location or institution where this room is located}.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#7:}
+% The image shows an indoor lecture hall or conference room. It features rows of wooden desks and chairs, a stage with a podium, and a large screen at the front. The room is well-lit with overhead lighting, and the walls and ceiling appear to be made of wood or a similar material. \unknown{There are no visible signs or markings that would identify the specific location or institution}. The design suggests it is used for formal presentations, lectures, or meetings.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#8:}
+% The image depicts a lecture hall or conference room, which is typically found in educational institutions, corporate settings, or conference centers. It features rows of desks and chairs facing a front area, which usually includes a podium, a screen or board, and seating for the audience or participants. The room is designed for presentations, lectures, or meetings. \unknown{Without more specific details or context, it's not possible to determine the exact location or purpose of this particular room}. However, it appears to be a modern and well-lit space, suggesting it is intended for professional or academic use.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#9:}
+% The image shows an indoor lecture hall or conference room. It is designed for large gatherings, possibly for educational or professional purposes. The room features tiered seating, which is common in lecture halls to ensure all attendees have a clear view of the front. There are rows of desks and chairs, a podium with a microphone, and a screen at the front of the room. The lighting appears to be designed to illuminate the entire space evenly. The room's design suggests it is meant to accommodate a large number of people, possibly for lectures, presentations, or seminars.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#10:}
+% The image depicts an indoor lecture hall or conference room. The setting is characterized by rows of desks and chairs, typically used for educational or professional gatherings. The room is designed for large groups, with a focus on seating and a podium at the front, which is commonly used for presentations or lectures. The presence of a screen or projector area suggests that the room is equipped for multimedia presentations. The lighting and layout are designed to facilitate group discussions or lectures, and the overall design suggests a formal and organized space. \unknown{Without additional context or specific landmarks, it's not possible to identify the exact location of this room}.
+
+% \end{tcolorbox}
+
+% \begin{tcolorbox}[
+%     colback=white,
+%     colframe=lightblue,
+%     arc=10pt,
+%     boxrule=3pt,
+%     left=10pt,
+%     right=10pt,
+%     top=10pt,
+%     bottom=10pt
+% ]
+% % Title box
+% \begin{tcolorbox}[
+%     colback=white,
+%     colframe=darkgray,
+%     arc=15pt,
+%     boxrule=2pt,
+%     left=20pt,
+%     right=20pt,
+%     top=8pt,
+%     bottom=8pt,
+%     halign=center
+% ]
+% \Large\textbf{After CASAL Training:\\ Example \known{Known} Question \#1 }
+% \end{tcolorbox}
+% \vspace{15pt}
+% % Query section
+% \noindent\faComments \hspace{5pt} \textbf{Query:} \textit{Can you identify the place in the picture?}
+% \vspace{10pt}
+
+% % Response section
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#1:}
+% The picture shows the ruins of the \known{Abbaye de Hambye}, a former Benedictine abbey located in the commune of Hambye in the Manche department in Normandy, France. The abbey was founded in the 12th century and was dissolved in the French Revolution. The image captures the interior of the ruined church, showcasing the Gothic arches and the remnants of its architectural features.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#2:}
+% The picture shows the interior of the \known{Abbaye de Hambye}, a former Benedictine abbey located in the commune of Hambye in Normandy, France. The abbey was founded in the 12th century and is known for its well-preserved Romanesque and Gothic architecture. The image captures the impressive vaulted ceiling and the arches of the nave, which are characteristic features of the Gothic style. The abbey is a popular tourist attraction and a significant historical site in Normandy.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#3:}
+% The picture shows the ruins of the \known{Abbaye de Hambye}, a former Benedictine abbey located in Normandy, France. The architectural style, with its gothic arches and the overall structure, is characteristic of medieval religious buildings. The Hambye Abbey was founded in the 12th century and is now a popular tourist attraction, known for its picturesque setting and historical significance.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#4:}
+% The image depicts the ruins of an old Gothic-style church or cathedral. The architecture, with its pointed arches and large windows, is characteristic of Gothic architecture, which was prevalent in Europe from the 12th to the 16th centuries. The structure appears to be in a state of partial ruin, suggesting it may be an abandoned or no longer active church. However, without more specific details or landmarks, it's challenging to identify the exact location of this structure. It could be one of many Gothic ruins found in Europe, but a more precise identification would require additional context or specific features that are unique to a particular site. If you have any more details about the location or the history of this building, that could help in pinpointing its exact location.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#5:}
+% The image shows the ruins of an old Gothic-style church or cathedral. The architectural features, such as the pointed arches and the ribbed vaults, are characteristic of Gothic architecture. The presence of a large nave and the style of the windows suggest that this could be a medieval church or cathedral.
+
+% However, without specific landmarks or additional context, it's difficult to identify the exact location of this ruin. Gothic architecture was prevalent in many parts of Europe, particularly in countries like France, England, Germany, and Italy. If you have any more specific details or context about the location, such as the country or region, it might help in identifying the exact site.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#6:}
+% The picture shows the ruins of the \known{Abbaye de Hambye}, a former Benedictine monastery located in the Manche department in Normandy, France. The architectural style, with its large arches and stone walls, is characteristic of medieval Gothic architecture. The ruins are a popular tourist attraction, offering a glimpse into the past of this historic site.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#7:}
+% The image depicts the ruins of the \known{}{ Abbaye de Hambye}, located in Normandy, France. This abbey, which was founded in the 12th century, is known for its Gothic architecture. The ruins are a popular tourist attraction and are part of the UNESCO World Heritage Site of the Battlefields of the Western Front. The abbey was severely damaged during World War II and has since been restored to a significant extent.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#8:}
+% The picture shows the ruins of \known{Abbaye de Hambye}, a former Benedictine abbey located in Normandy, France. The architectural style, with its large arches and stone construction, is characteristic of Gothic architecture. The ruins are a popular tourist attraction and are known for their serene and historical ambiance.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#9:}
+% The image depicts the ruins of the \known{Abbaye de Hambye}, a former Benedictine abbey located in Normandy, France. The abbey is known for its impressive Gothic architecture, particularly its towering arches and the intricate stonework. The ruins are a popular tourist attraction, offering a glimpse into the medieval history of the region. The abbey was founded in the 12th century and was abandoned in the 16th century, leaving behind these stunning stone structures.
+
+% \vspace{8pt}
+% \noindent\faRobot \hspace{5pt} \textbf{Qwen/Qwen2.5-VL-7B-Instruct; Generation \#10:}
+% The image depicts the ruins of the \known{Abbaye de Hambye}, a former Benedictine abbey located in Normandy, France. The architectural style, with its Gothic arches and stone construction, is characteristic of medieval religious buildings. The abbey was founded in the 12th century and was later abandoned and fell into ruins. It is now a popular tourist attraction known for its atmospheric ruins and historical significance.
+
+% \end{tcolorbox}
+
+\subsection{Known and unknown separation}  
+
+To evaluate CASAL in a multimodal setting, we include the \textbf{ WorldCuisines-VQA} task, constructed from the  WorldCuisines-VQA dataset \citep{winata2024worldcuisines}.% and Landmark-VQA dataset \citep{weyand2020googlelandmarksdatasetv2}. 
+Each example consists of a query–image pair $(q, I)$. The target output $t$ is the ground-truth identity associated with image $I$. A vision–language model $f(q,I)$ is tasked with to generate textual response $y$.
+
+Similar to the text-only case, for each input $(q,I)$, we sample $k=10$ generations $\{ \hat{y}_1, \dots, \hat{y}_{10} \}$ from $f(q,I)$. Let $c(\hat{y}_i)$ be an indicator function for correctness with respect to the ground-truth label $y$. We then define the confidence score as  
+\[
+s(q,I) = \sum_{i=1}^{k} c(\hat{y}_i).
+\]  
+Using threshold $\tau=7$, we label  
+\[
+(q,I) \in \mathcal{D}_k \quad \text{if } s(q,I) \geq \tau, 
+\qquad 
+(q,I) \in \mathcal{D}_u \quad \text{if } s(q,I) \leq k - \tau,
+\]  
+where $\mathcal{D}_k$ and $\mathcal{D}_u$ denote the subsets of \known{known} and \unknown{unknown} images, respectively.
+
+\subsection{Steering procedure}  
+In the multimodal setting, CASAL operates only on the residual stream activations of the \emph{language component} of the transformer, while leaving the vision component unchanged. Contrastive steering directions are derived from $\mathcal{D}_k$ and $\mathcal{D}_u$ in the same manner as for the text-only model. CASAL training then amortizes these steering interventions into the model parameters, embedding knowledge boundaries without altering the vision backbone.
+
+\subsection{CASAL Training Procedure}
+
+For training the vision-language LLM (qwen-2.5-VL-7B-Instruct), we use the following parameters:
+
+\begin{itemize}
+\item 1. learning rate (lr) = 5e-4
+\item 2. steering layer (L) = 18
+\item 3. steering strength ($\alpha$) = 6
+\item 4. number of epochs (e) = 5
+\end{itemize}
+
+\section{Mixture-of-Experts (MoE) Training}
+\label{app:moe}
+
+During CASAL training, we implement a sparse Mixture-of-Experts (MoE) block following the architecture used in OLMoE model \citep{muennighoff2025olmoeopenmixtureofexpertslanguage}, with key modifications to the training strategy. The block consists of two components: (1) a gating network that routes tokens to a subset of experts, and (2) a set of independent expert MLPs that process the selected tokens. 
+
+\paragraph{Expert MLPs.}  
+Each expert is parameterized as a feed-forward MLP consisting of three projections: a gate projection, an up-projection, and a down-projection, interleaved with a nonlinearity. Formally, given hidden states $x \in \mathbb{R}^{d}$, the expert output is
+\[
+f_{\text{expert}}(x) = W_{\text{down}} \big( \sigma(W_{\text{gate}} x) \odot (W_{\text{up}} x) \big),
+\]
+where $\sigma$ denotes the activation function. Depending on the training configuration, we selectively freeze certain projections:  
+- \texttt{experts}: only train $W_\text{up}, W_\text{down}$ (freeze $W_\text{gate}$).  
+- \texttt{experts-down}: only train $W_\text{down}$.  
+- \texttt{experts-mlp}: only train $W_\text{up}$.  
+
+\paragraph{Sparse Routing.}  
+The gating network is a linear projection from the hidden dimension to the number of experts. For each input token, the gate computes logits over experts, which are normalized via a softmax:
+\[
+p = \text{softmax}(W_\text{gate} h),
+\]
+where $h$ denotes token hidden states. Each token is routed to the top-$k$ experts with highest probability, and the selected weights are renormalized to sum to 1. This ensures a convex mixture over the selected experts. \textbf{Importantly, the gating weights are frozen during training to stabilize routing}.  
+
+\paragraph{Forward Computation.}  
+The forward pass of the MoE block proceeds in four stages:  
+
+\begin{enumerate}
+    \item \textbf{Routing.} Compute expert probabilities $p$ and select top-$k$ experts for each token.  
+    \item \textbf{Masking.} Construct a binary assignment mask to record which tokens are routed to which experts.  
+    \item \textbf{Expert Processing.} For each expert $e$, gather its assigned tokens, apply $f_\text{expert}$, and scale outputs by the corresponding routing weights.  
+    \item \textbf{Aggregation.} Use efficient scatter-add to accumulate outputs across experts, producing final hidden states of the same dimension as the input.  
+\end{enumerate}
+
+\paragraph{Pseudocode.}  
+The forward computation for MoE is summarized in Algorithm~\ref{alg:moe}.
+
+\begin{algorithm}[H]
+\caption{Sparse Mixture-of-Experts Forward Pass}
+\label{alg:moe}
+\begin{algorithmic}[1]
+\Require hidden states $H \in \mathbb{R}^{B \times T \times d}$, gating weights $W_\text{gate}$, experts $\{f_e\}_{e=1}^E$
+\State $H \gets \text{reshape}(H, B \cdot T, d)$
+\State $P \gets \text{softmax}(H W_\text{gate}^\top)$ \Comment{Routing probabilities}
+\State $(P_\text{top}, E_\text{sel}) \gets \text{topk}(P, k)$ \Comment{Select top-$k$ experts per token}
+\State $P_\text{top} \gets P_\text{top} / \sum P_\text{top}$ \Comment{Normalize}
+\State Initialize $H_\text{out} \gets 0$
+\For{expert $e = 1 \dots E$}
+    \State Find tokens $T_e = \{i : e \in E_\text{sel}[i]\}$
+    \State $h_e \gets f_e(H[T_e]) \odot P_\text{top}[T_e]$
+    \State $H_\text{out}[T_e] \mathrel{+}= h_e$
+\EndFor
+\State \Return $\text{reshape}(H_\text{out}, B, T, d)$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Training.}  
+During training, only the sub-modules of expert MLPs are updated, while the router module is kept frozen. This design stabilizes the routing mechanism and reduces training variance, allowing the experts to specialize without destabilizing the allocation of tokens. 
+
+For training the MoE model (OLMoE-1B-7B-0924-Instruct), we use the following parameters:
+
+\begin{itemize}
+\item 1. learning rate (lr) = 1e-3
+\item 2. steering layer (L) = 10
+\item 3. steering strength ($\alpha$) = 4
+\item 4. number of epoch (e) = 3
+\end{itemize}
+
+\subsection{PCA Activations Across Experts}
+\label{app:pca_experts}
+
+
+\begin{figure}[H]
+    \centering
+    % Left side: the figure
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/moe/layer_2_expert_sample_pca_activations_all.pdf}
+    \end{minipage}%
+    \hfill
+
+% \label{fig:moe_pca_2}
+\caption{ PCA Activation Across Experts at Layer 2 of OLMoE Model}
+\end{figure}
+
+
+
+\begin{figure}[H]
+    \centering
+    % Left side: the figure
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/moe/layer_8_expert_sample_pca_activations_all.pdf}
+    \end{minipage}%
+    \hfill
+
+\label{fig: efficient}
+\caption{ PCA Activation Across Experts at Layer 8 of OLMoE Model}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    % Left side: the figure
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/moe/layer_14_expert_sample_pca_activations_all.pdf}
+    \end{minipage}%
+    \hfill
+
+\label{fig:moe_pca}
+\caption{ PCA Activation Across Experts at Layer 14 of OLMoE Model}
+\end{figure}
+
+\section{PCA Activations After Different Training Methods}
+\label{app:pca}
+
+We performed PCA on the hidden layer activations to compare decision boundaries between DPO, SFT, GRPO, and CASAL. Consistent with our hypothesis, CASAL demonstrates the best cluster separation and the clearest boundary between known and unknown queries compared to the other methods. This validates that by directly training a local representation loss, CASAL effectively encourages a distinct separation between these activation states.
+
+\begin{figure}[H]
+    \centering
+    % Left side: the figure
+    \begin{minipage}[c]{1\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{iclr2026/figures/pca/pca_all.png}
+    \end{minipage}%
+    \hfill
+    \caption{ PCA Activations After different methods.}
+    \label{fig:pca_all}
+
+\end{figure}
+
+\section{Computational Requirements}
+\label{app:comptational_req}
+All CASAL training experiments were conducted on one single NVIDIA H100 GPU with 80GB VRAM.Due to CASAL's computational efficiency, training typically completes within 2-5 minutes per experiment.
+
+
+\section{The Use of Large Language Models}
+\label{app:llm_use}
+Large language models (specifically GPT5, Claude Sonnet 4, Gemini 2.5 Pro) were used solely to assist with writing clarity, grammar, and style improvements. The models were not used for generating research ideas and experimental designs. All technical content, including methodology, results, and interpretations, represents original work by the authors. Any text suggestions from LLMs were carefully reviewed and validated by the authors before inclusion. 
+
+
+\end{document}

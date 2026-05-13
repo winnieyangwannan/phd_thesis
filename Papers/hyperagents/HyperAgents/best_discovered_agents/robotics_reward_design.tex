@@ -1,0 +1,551 @@
+% gen_1
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 3798256..98e6706 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -5,7 +5,7 @@ from utils.common import extract_jsons
+ class TaskAgent(AgentSystem):
+     def forward(self, inputs):
+         """
+-        An agent that solves a given task.
++        An agent that solves a given task with enhanced reasoning and error handling.
+         ...
+         """
+-        domain = inputs['domain']
+-        instruction = f"""You are an agent.
++        domain = inputs.get('domain', 'general')
++
++        # Enhanced instruction with clearer structure and reasoning guidance
++        instruction = f"""You are an expert AI agent specialized in solving complex tasks.
+
+-Task input:
++Task Domain: {domain}
++
++Task Input:
+ ```
+ {inputs}
+ ```
+
++Instructions:
++1. Carefully analyze the task input and identify the key requirements
++2. Break down the problem into logical steps if needed
++3. Formulate your response based on the task requirements
++4. Provide your final answer in the specified JSON format
++
+ Respond in JSON format with the following schema:
+ <json>
+ {{
+-    "response": ...
++    "reasoning": "Brief explanation of your approach",
++    "response": "Your final answer here"
+ }}
+-</json>"""
+-        new_msg_history = chat_with_agent(instruction, model=self.model, msg_history=[], logging=self.log)
++</json>
+
+-        # Extract the response
++IMPORTANT: Always include both 'reasoning' and 'response' fields in your JSON output."""
++
++        # Attempt to get response with retry logic
++        max_retries = 2
+         prediction = "None"
+-        try:
+-            extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
+-            if extracted_jsons is not None and "response" in extracted_jsons[-1]:
+-                prediction = extracted_jsons[-1]['response']
+-        except Exception as e:
+-            self.log(f"Error extracting prediction: {e}")
+-            prediction = "None"
++        new_msg_history = []
++
++        for attempt in range(max_retries + 1):
++            try:
++                new_msg_history = chat_with_agent(...)
++                # Extract the response with retry logic
++                if new_msg_history and len(new_msg_history) > 0:
++                    extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
++                    if extracted_jsons is not None and len(extracted_jsons) > 0:
++                        response_json = extracted_jsons[-1]
++                        if "reasoning" in response_json:
++                            self.log(f"Agent reasoning: {response_json['reasoning']}")
++                        if "response" in response_json:
++                            prediction = response_json['response']
++                            break
++            except Exception as e:
++                self.log(f"Error in attempt {attempt + 1}: {str(e)}")
+
+         return prediction, new_msg_history
+\end{lstlisting}
+
+% % gen_7
+% \begin{lstlisting}[language=Diff]
+% diff --git a/task_agent.py b/task_agent.py
+% index 98e6706..3c2dd8a 100644
+% --- a/task_agent.py
+% +++ b/task_agent.py
+% @@ -17,8 +17,43 @@ class TaskAgent(AgentSystem):
+%          """
+%          domain = inputs.get('domain', 'general')
+
+% -        # Enhanced instruction with clearer structure and reasoning guidance
+% -        instruction = f"""You are an expert AI agent specialized in solving complex tasks.
+% +        # Build domain-specific instruction
+% +        if domain == 'paper_review':
+% +            paper_text = inputs.get('paper_text', '')
+% +            instruction = f"""You are an expert reviewer for a top-tier academic conference.
+
+% +Your task is to decide whether to ACCEPT or REJECT the following paper.
+
+% +Paper Text:
+% +{paper_text}
+
+% +Evaluation Criteria (consider ALL criteria):
+% +1. **Novelty**: Does the paper present genuinely new ideas or significant contributions?
+% +2. **Technical Quality**: Is the methodology sound? Are experiments well-designed?
+% +3. **Clarity**: Is the paper well-written and easy to understand?
+% +4. **Significance**: Will this work meaningfully impact the field?
+% +5. **Validation**: Are claims properly supported by evidence?
+
+% +Instructions:
+% +1. Analyze the paper objectively against all five criteria
+% +2. Identify both strengths and weaknesses
+% +3. Make a balanced decision - avoid default bias toward acceptance or rejection
+% +4. Base your decision on concrete evidence from the paper
+% +5. Accept papers that meet high standards across most criteria
+% +6. Reject papers with fatal flaws or insufficient contributions
+
+% +Respond in JSON format:
+% +<json>
+% +{{
+% +    "reasoning": "Balanced analysis of key strengths and weaknesses (2-4 sentences)",
+% +    "response": "accept or reject (exactly one word, lowercase)"
+% +}}
+% +</json>
+
+% +IMPORTANT: The response field must contain ONLY "accept" or "reject" (lowercase)."""
+% +        else:
+% +            # Generic instruction for other domains
+% +            instruction = f"""You are an expert AI agent specialized in solving complex tasks.
+% \end{lstlisting}
+
+% gen_8
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 3c2dd8a..faab41d 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -27,30 +27,96 @@ Paper Text:
++Critical Evaluation Guidelines:
++- Be rigorous and selective - most submissions have issues
++- Accept ONLY papers that are strong across MOST criteria (4-5/5)
++- Reject papers with significant weaknesses in multiple areas
++- A paper needs to be clearly above average to warrant acceptance
++- Consider: Would this paper strengthen the conference program?
++- If a paper is borderline or has major concerns, lean toward REJECT
+
++        elif domain == 'genesis_go2walking':
++            # Genesis domain-specific instruction with environment attribute documentation
++            task_description = inputs.get('task_description', '')
++            genesis_env_path = inputs.get('genesis_environment_path', '')
++            default_reward_function = inputs.get('default_reward_function', '')
++
++            instruction = f"""You are an expert in reinforcement learning and reward function design.
+
++Task: {task_description}
+
++Default Reward Function:
++```python
++{default_reward_function}
++```
+
++AVAILABLE ENVIRONMENT ATTRIBUTES (use ONLY these):
++- env.commands: [num_envs, 3] - velocity commands [lin_vel_x, lin_vel_y, ang_vel_z]
++- env.base_lin_vel: [num_envs, 3] - base linear velocity [x, y, z]
++- env.base_ang_vel: [num_envs, 3] - base angular velocity [roll, pitch, yaw]
++- env.base_pos: [num_envs, 3] - base position [x, y, z]
++- env.base_quat: [num_envs, 4] - base orientation quaternion
++- env.projected_gravity: [num_envs, 3] - gravity vector in base frame
++- env.dof_pos: [num_envs, 12] - joint positions
++- env.dof_vel: [num_envs, 12] - joint velocities
++- env.actions: [num_envs, 12] - current actions
++- env.last_actions: [num_envs, 12] - previous actions
++- env.last_dof_vel: [num_envs, 12] - previous joint velocities
+
++IMPORTANT CONSTRAINTS:
++- DO NOT use env.torques (not available)
++- DO NOT access undefined attributes
++- Use only the attributes listed above
++- All operations must work with PyTorch tensors
+\end{lstlisting}
+
+% gen_12
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index faab41d..62c444f 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -88,19 +90,24 @@ AVAILABLE ENVIRONMENT ATTRIBUTES (use ONLY these):
+-IMPORTANT CONSTRAINTS:
+-- DO NOT use env.torques (not available)
+-- DO NOT access undefined attributes
+-- Use only the attributes listed above
+-- All operations must work with PyTorch tensors
++CRITICAL RULES (VIOLATION WILL CAUSE IMMEDIATE FAILURE):
++1. DO NOT reference env.torques or env.dt in your code - THESE DO NOT EXIST
++2. DO NOT add hasattr() checks for unavailable attributes and then use them
++3. DO NOT assume any attributes beyond the exact list above
++4. NEVER write code like: if hasattr(env, 'torques'): use env.torques
++5. All operations must work with PyTorch tensors
++6. If you need time differences, use fixed timestep: dt = 0.02
++7. ONLY use attributes from the AVAILABLE list - nothing else exists
+
++                            # Post-process prediction based on domain
++                            if domain == 'paper_review':
++                                # Ensure response is exactly "accept" or "reject"
++                                prediction_lower = str(prediction).lower().strip()
++                                if 'accept' in prediction_lower and 'reject' not in prediction_lower:
++                                    prediction = 'accept'
++                                elif 'reject' in prediction_lower:
++                                    prediction = 'reject'
++                                else:
++                                    self.log(f"Warning: Ambiguous response '{prediction}', defaulting to 'reject'")
++                                    prediction = 'reject'
+\end{lstlisting}
+
+% gen_13
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 62c444f..fb504a2 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -40,26 +40,30 @@ Critical Evaluation Guidelines:
+-- If a paper is borderline or has major concerns, lean toward REJECT
++- Balance your decisions: aim for appropriate selectivity (not too lenient, not too harsh)
++- If a paper is borderline, carefully weigh the evidence on both sides
+
+ Reward Function Design Guidelines:
+ 1. Primary reward: Track forward velocity command (env.commands[:, 0] vs env.base_lin_vel[:, 0])
++   - Use exponential reward: torch.exp(-error * temperature) for smooth gradients
++   - Typical temperature: 1.0-2.0, scale: 0.8-1.0
+ 2. Secondary rewards: Track angular velocity, maintain base height, stable orientation
+-3. Penalties: Excessive action changes (use env.actions - env.last_actions)
+-4. Use exponential rewards: torch.exp(-error * temperature) for smooth gradients
+-5. Scale rewards appropriately (main objectives: 0.5-1.0, penalties: -0.5 to -0.01)
+-6. For smooth action changes: use torch.sum(torch.square(env.actions - env.last_actions))
+-7. For velocity smoothness: use torch.sum(torch.square(env.dof_vel - env.last_dof_vel))
+-8. Return: total_reward, reward_components dict, reward_scales dict
++   - Angular velocity tracking: similar to linear velocity
++   - Base height: penalize deviation from target (typically 0.32m)
++   - Orientation: use env.projected_gravity to penalize tilt
++3. Penalties for smooth and stable locomotion:
++   - Action smoothness: -0.01 * torch.sum(torch.square(env.actions - env.last_actions), dim=1)
++   - Joint velocity smoothness: -0.001 * torch.sum(torch.square(env.dof_vel - env.last_dof_vel), dim=1)
++   - Excessive joint velocities: -0.0005 * torch.sum(torch.square(env.dof_vel), dim=1)
++   - Unwanted lateral movement: penalize env.base_lin_vel[:, 1]
++4. Balance reward components:
++   - Main tracking objectives: 0.5-1.0 scale
++   - Secondary objectives: 0.2-0.5 scale
++   - Smoothness penalties: -0.01 to -0.001 scale
++5. Return: total_reward, reward_components dict, reward_scales dict
+\end{lstlisting}
+
+% % gen_14
+% \begin{lstlisting}[language=Diff]
+% diff --git a/task_agent.py b/task_agent.py
+% index fb504a2..3de640e 100644
+% --- a/task_agent.py
+% +++ b/task_agent.py
+% @@ -35,35 +35,38 @@ Evaluation Criteria (consider ALL criteria carefully):
+
+%  Critical Evaluation Guidelines:
+% -- Be rigorous and selective - most submissions have issues
+% -- Accept ONLY papers that are strong across MOST criteria (4-5/5)
+% -- Reject papers with significant weaknesses in multiple areas
+% +- Be rigorous and selective - top conferences accept ~25% of submissions
+% +- Most papers have significant issues that warrant rejection
+% +- Accept ONLY papers that excel in novelty AND technical quality AND significance
+% +- Even well-written papers should be rejected if they lack novelty or significance
+% +- Papers must have STRONG validation with comprehensive experiments
+% +- If a paper has ANY critical flaws in methodology or lacks clear novelty, REJECT
+% +- For borderline cases: When in doubt between accept/reject, favor REJECT
+% +- Ask yourself: Is this among the top 25% of papers? If not clearly yes, then REJECT
+
+%  Instructions:
+% -1. Critically analyze the paper against all five criteria
+% -2. Identify both strengths and weaknesses objectively
+% -3. Be honest about limitations - most papers have them
+% +1. Start by identifying potential RED FLAGS: lack of novelty, weak validation, methodological flaws
+% +2. Critically analyze against ALL five criteria - weakness in ANY major criterion -> likely REJECT
+% +3. For each criterion, explicitly note whether it meets the HIGH bar for a top conference
+% +4. List specific weaknesses clearly - be thorough in finding problems
+% +5. Only if the paper is STRONG on novelty AND technical quality AND significance should you consider accept
+% +6. Apply the "top 25% test": Would this paper be in the top quartile of all submissions?
+% +7. Default stance should be critical - acceptance requires exceptional quality
+
+%  IMPORTANT:
+%  - The response field must contain ONLY "accept" or "reject" (lowercase, no other text)
+% -- Provide detailed reasoning that justifies your decision
+% -- Consider all five evaluation criteria in your analysis"""
+% +- Start reasoning by identifying weaknesses - be thorough and critical
+% +- Accept ONLY if paper excels across ALL major criteria (novelty, technical quality, significance)
+% +- When uncertain or borderline, default to REJECT
+% +- Remember: Most papers should be rejected; acceptance is for exceptional work only"""
+% \end{lstlisting}
+
+% % gen_16
+% \begin{lstlisting}[language=Diff]
+% diff --git a/task_agent.py b/task_agent.py
+% index 3de640e..b39af37 100644
+% --- a/task_agent.py
+% +++ b/task_agent.py
+% @@ -20,53 +20,49 @@ class TaskAgent(AgentSystem):
+%          if domain == 'paper_review':
+%              paper_text = inputs.get('paper_text', '')
+% -            instruction = f"""You are an expert reviewer for a top-tier academic conference.
+% +            instruction = f"""You are a reviewer for a top-tier academic conference with a ~50% acceptance rate.
+
+% +**Evaluation Process:**
+
+% +Score each criterion on a 3-point scale:
+% +- **3 = Strong**: Exceeds expectations significantly
+% +- **2 = Adequate**: Meets minimum standards but nothing exceptional
+% +- **1 = Weak**: Below acceptable standards
+
+% +**Five Criteria:**
+% +1. **Novelty**: Does it present genuinely new ideas?
+% +2. **Technical Quality**: Is methodology sound and rigorous?
+% +3. **Clarity**: Is it well-written and clear?
+% +4. **Significance**: Will it meaningfully impact the field?
+% +5. **Validation**: Are claims properly validated with evidence?
+
+% +**Decision Rules (FOLLOW STRICTLY):**
+% +- **ACCEPT**: Average score >= 2.4 AND no scores of 1 on Novelty, Technical Quality, or Significance
+% +- **REJECT**: Average score < 2.4 OR any score of 1 on Novelty, Technical Quality, or Significance
+
+% +**Examples:**
+% +- Scores [3,3,2,3,2] -> Average 2.6 -> ACCEPT
+% +- Scores [3,2,3,2,2] -> Average 2.4 -> ACCEPT
+% +- Scores [2,2,3,2,2] -> Average 2.2 -> REJECT
+% +- Scores [3,1,3,3,3] -> Has 1 on Technical Quality -> REJECT
+% +- Scores [2,3,2,2,2] -> Average 2.2 -> REJECT
+% \end{lstlisting}
+
+% % gen_18
+% \begin{lstlisting}[language=Diff]
+% diff --git a/task_agent.py b/task_agent.py
+% index b39af37..7a30be1 100644
+% --- a/task_agent.py
+% +++ b/task_agent.py
+% @@ -20,49 +20,67 @@ class TaskAgent(AgentSystem):
+%          if domain == 'paper_review':
+%              paper_text = inputs.get('paper_text', '')
+% -            instruction = f"""You are a reviewer for a top-tier academic conference with a ~50% acceptance rate.
+% +            instruction = f"""You are a CRITICAL reviewer for a top-tier conference (50% acceptance rate). Be skeptical and demand excellence.
+
+% +**CRITICAL SCORING RUBRIC** (Be strict - most papers are NOT excellent):
+
+% +**Score 3 (Strong)** - RARE, only for exceptional work:
+% +- Novelty: Introduces fundamentally new approach/paradigm that will change how people think
+% +- Technical: Methodology is impeccable with deep theoretical insights or rigorous proofs
+% +- Clarity: Exceptionally clear writing that could be a textbook example
+% +- Significance: Will spawn new research direction or solve major open problem
+% +- Validation: Comprehensive experiments covering all edge cases with statistical rigor
+
+% +**Score 2 (Adequate)** - Barely acceptable for publication:
+% +- Novelty: Minor incremental improvement or simple combination of existing ideas
+% +- Technical: Methodology is correct but straightforward, no major technical contributions
+% +- Clarity: Readable but could be clearer, some concepts need better explanation
+% +- Significance: Addresses niche problem with limited broader impact
+% +- Validation: Basic experiments shown, but missing important ablations or baselines
+
+% +**Score 1 (Weak)** - Below publication threshold:
+% +- Novelty: No new ideas, just applies existing methods to new dataset
+% +- Technical: Flawed methodology, missing baselines, or questionable assumptions
+% +- Clarity: Hard to understand, poorly organized, or missing critical details
+% +- Significance: Problem is trivial or solution won't impact the field
+% +- Validation: Insufficient experiments, cherry-picked results, or weak evaluation
+
+% +**RED FLAGS (Consider score 1 if ANY present):**
+% +- Claims not supported by experiments
+% +- Missing comparisons to obvious baselines
+% +- Unclear methodology that cannot be reproduced
+% +- Overclaimed significance without evidence
+% +- Fundamental flaws in approach
+% +- Incremental work (just benchmarking existing methods)
+
+% +**DECISION RULES (FOLLOW EXACTLY):**
+% +- **ACCEPT**: Average >= 2.5 AND all critical criteria (Novelty, Technical, Significance) >= 2
+% +- **REJECT**: Average < 2.5 OR ANY of (Novelty, Technical, Significance) = 1
+
+% +**REMEMBER:**
+% +- Be CRITICAL - most papers should get 2s, not 3s
+% +- Score 2 means "barely adequate", not "good"
+% +- When in doubt between scores, choose the lower one
+% +- ~50% of papers should be rejected"""
+% \end{lstlisting}
+
+% % gen_37
+% \begin{lstlisting}[language=Diff]
+% diff --git a/task_agent.py b/task_agent.py
+% index 7a30be1..42c0f36 100644
+% --- a/task_agent.py
+% +++ b/task_agent.py
+% @@ -25,48 +25,50 @@ Paper Text:
+
+% -**CRITICAL SCORING RUBRIC** (Be strict - most papers are NOT excellent):
+% +**BALANCED SCORING RUBRIC** (Be fair and objective):
+
+% -**Score 3 (Strong)** - RARE, only for exceptional work:
+% +**Score 3 (Strong)** - Clearly exceeds standards:
+% +- Novelty: Presents genuinely new ideas, significant advancement over prior work
+% +- Technical: Sound methodology with rigorous validation, thorough analysis
+% +- Clarity: Well-written, clear presentation, reproducible methodology
+% +- Significance: Addresses important problem, results will impact the field
+% +- Validation: Comprehensive experiments with proper baselines and analysis
+
+% -**Score 2 (Adequate)** - Barely acceptable for publication:
+% +**Score 2 (Adequate)** - Meets publication standards:
+% +- Novelty: Incremental but meaningful contribution, builds reasonably on prior work
+% +- Technical: Methodology is sound though not groundbreaking, adequate rigor
+% +- Clarity: Generally clear though some parts could be better explained
+% +- Significance: Addresses relevant problem with reasonable impact
+% +- Validation: Sufficient experiments to support claims, covers main scenarios
+
+% -**Score 1 (Weak)** - Below publication threshold:
+% +**Score 1 (Weak)** - Below publication standards:
+
+% +**CRITICAL REJECTION CRITERIA:**
+% +Reject if ANY of these are present:
+% +- Fatal technical flaws or incorrect methodology
+% +- Claims clearly not supported by evidence
+% +- Cannot be reproduced due to missing details
+% +- Novelty score = 1 (no new contribution)
+% +- Technical score = 1 (fundamentally flawed)
+% +- Significance score = 1 (trivial problem/solution)
+
+% -**DECISION RULES (FOLLOW EXACTLY):**
+% -- **ACCEPT**: Average >= 2.5 AND all critical criteria >= 2
+% -- **REJECT**: Average < 2.5 OR ANY critical = 1
+% +**DECISION RULES (FOLLOW STRICTLY):**
+% +- **ACCEPT**: Average >= 2.4 AND no score of 1 on Novelty, Technical, or Significance
+% +- **REJECT**: Average < 2.4 OR ANY score of 1 on Novelty, Technical, or Significance
+
+% +**IMPORTANT REMINDERS:**
+% +- Be objective and fair - evaluate each criterion independently
+% +- Score 2 means "adequate/acceptable", score 3 means "strong/excellent"
+% +- Focus on identifying fatal flaws (score 1) that warrant rejection
+% +- Consider both strengths and weaknesses before deciding
+% +- Aim for ~50% acceptance rate by being discerning but not overly harsh"""
+% \end{lstlisting}
+
+% % gen_43
+% \begin{lstlisting}[language=Diff]
+% diff --git a/task_agent.py b/task_agent.py
+% index 42c0f36..c1c37a5 100644
+% --- a/task_agent.py
+% +++ b/task_agent.py
+% @@ -20,70 +20,88 @@ class TaskAgent(AgentSystem):
+%          if domain == 'paper_review':
+%              paper_text = inputs.get('paper_text', '')
+% -            instruction = f"""You are a CRITICAL reviewer for a top-tier conference (50% acceptance rate).
+% +            instruction = f"""You are a RIGOROUS reviewer for a top-tier ML conference with a 25-30% acceptance rate. Most submissions have merit but only the best should be accepted.
+
+% +**REJECTION CRITERIA** (Reject if ANY apply):
+% +1. Average score < 2.5 (below quality threshold)
+% +2. ANY dimension scores 1 (critical weakness)
+% +3. Novelty <= 1.5 (insufficient contribution)
+% +4. Technical quality = 1 (fundamentally flawed)
+% +5. Claims not supported by evidence
+% +6. Cannot be reproduced or validated
+
+% +**ACCEPTANCE CRITERIA** (ALL must be satisfied):
+% +1. Average score >= 2.5
+% +2. NO score of 1 in any dimension
+% +3. Novelty >= 2 (meaningful contribution)
+% +4. Technical >= 2 (sound methodology)
+% +5. Claims properly supported
+
+% +**REVIEW PROCESS:**
+% +1. Carefully read the paper and identify its main contribution
+% +2. Score EACH dimension independently (don't let one dimension bias others)
+% +3. Be CRITICAL: Look for weaknesses, gaps, missing comparisons
+% +4. Check if rejection criteria are met (if yes, must reject)
+% +5. Check if ALL acceptance criteria are met (if not all, must reject)
+% +6. Calculate average and make final decision
+
+% +**IMPORTANT:**
+% +- Default to REJECT unless paper clearly meets ALL acceptance criteria
+% +- ~70% of papers should be rejected (maintain high standards)
+% +- Score 2 = "acceptable but not great", Score 3 = "genuinely strong"
+% +- Most papers will have mix of 2s and 3s, with occasional 1s
+% +- Don't be overly generous - top conferences reject many good papers
+% \end{lstlisting}
+
+% % gen_89
+% \begin{lstlisting}[language=Diff]
+% diff --git a/task_agent.py b/task_agent.py
+% index c1c37a5..bacc897 100644
+% --- a/task_agent.py
+% +++ b/task_agent.py
+% @@ -20,88 +20,73 @@ class TaskAgent(AgentSystem):
+%          if domain == 'paper_review':
+%              paper_text = inputs.get('paper_text', '')
+% -            instruction = f"""You are a RIGOROUS reviewer for a top-tier ML conference with a 25-30% acceptance rate.
+% +            instruction = f"""You are a reviewer for a top-tier ML/AI conference with approximately 50% acceptance rate.
+
+% +**Review Philosophy:**
+% +- Be fair and balanced: recognize both strengths and weaknesses
+% +- Most papers submitted to top venues have merit - distinguish publishable from not-yet-ready
+% +- Use the full 1-3 scale: avoid clustering scores (distribute naturally)
+% +- Score 2 is the "default acceptable" level - most criteria will be 2 or 3
+% +- Reserve score of 1 for truly serious flaws only
+
+% +**Scoring Scale (Be Generous but Fair):**
+% +- **3 = Good/Strong**: Clear strengths on this criterion, above average quality
+% +- **2 = Acceptable/Adequate**: Meets publication standards, no major issues
+% +- **1 = Poor/Inadequate**: Serious problems that disqualify the paper
+
+% +**Five Evaluation Criteria (score each 1-3):**
+% +1. **Novelty**: Is the contribution sufficiently novel? (2=incremental but solid, 3=novel idea)
+% +2. **Technical Quality**: Is methodology sound? (2=adequate rigor, 3=excellent execution)
+% +3. **Clarity**: Is it well-written? (2=understandable with minor issues, 3=very clear)
+% +4. **Significance**: Does it matter? (2=useful contribution, 3=important impact)
+% +5. **Validation**: Are claims supported? (2=adequate evidence, 3=thorough validation)
+
+% +**Decision Rules (Apply EXACTLY):**
+% +1. Calculate average of all 5 scores
+% +2. Check for any fatal flaws (score of 1 on Novelty, Technical Quality, OR Significance)
+% +3. **ACCEPT** if: Average >= 2.2 AND no fatal flaws (score of 1 on critical criteria)
+% +4. **REJECT** if: Average < 2.2 OR has fatal flaw on critical criterion
+
+% +**Scoring Calibration (Target 50% acceptance):**
+% +ACCEPT examples:
+% +- [3,3,3,2,2] -> Avg=2.6 -> ACCEPT (strong paper)
+% +- [3,2,2,3,2] -> Avg=2.4 -> ACCEPT (good overall)
+% +- [2,3,2,2,2] -> Avg=2.2 -> ACCEPT (meets threshold)
+% +- [2,2,3,2,2] -> Avg=2.2 -> ACCEPT (adequate)
+% +- [2,2,2,3,2] -> Avg=2.2 -> ACCEPT (borderline but acceptable)
+
+% +REJECT examples:
+% +- [2,2,2,2,1] -> Avg=1.8 -> REJECT (below threshold)
+% +- [2,2,1,2,2] -> Avg=1.8 -> REJECT (below threshold)
+% +- [3,1,3,3,2] -> REJECT (fatal flaw: Technical Quality = 1)
+% +- [1,3,3,2,3] -> REJECT (fatal flaw: Novelty = 1)
+% +- [2,2,2,2,2] -> Avg=2.0 -> REJECT (below threshold)
+
+% +**Critical Guidance:**
+% +- **Default to score of 2** for most criteria unless there's a clear reason for 1 or 3
+% +- Score 3: Clear strength or excellence on this dimension
+% +- Score 2: Acceptable quality, publishable standard (MOST COMMON)
+% +- Score 1: Major flaw or serious inadequacy (RARE - use sparingly)
+% +- Don't look for perfection - accept solid, publishable work
+% +- The 2.2 threshold with proper scoring yields ~50% acceptance
+% +- Be generous with 2s and 3s; reserve 1s for truly poor work
+
+% +IMPORTANT:
+% +- Most papers should get mostly 2s and 3s (score 1 is rare)
+% +- Calculate average correctly (sum/5)
+% +- Apply decision rules exactly: avg >= 2.2 AND no fatal flaws -> ACCEPT
+% +- Response field: ONLY "accept" or "reject" (lowercase, no other text)"""
+% \end{lstlisting}

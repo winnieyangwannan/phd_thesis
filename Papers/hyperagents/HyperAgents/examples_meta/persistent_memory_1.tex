@@ -1,0 +1,26 @@
+\begin{lstlisting}[language=Python]
+{
+  "best_performers_analysis": {
+    "value": "Best Performing Generations:\n\nPaper Review:\n
+      - Gen55: 63% acc, 25% accept rate, 38% accept recall, 88% reject recall (too harsh)\n
+      - Gen64: 61% acc, 53% accept rate, 64% accept recall, 58% reject recall (BEST BALANCE)\n\n
+      Genesis Go2Walking:\n- Gen62: 0.802 fitness (BEST)\n- Gen63: 0.798 fitness\n\n
+      Key Insight: Gen55 has best accuracy but is too harsh. Gen64 improved balance
+      but lower accuracy. Need to combine gen55's critical reasoning with gen64's balance.",
+    "timestamp": "2026-01-07T00:43:27.550275"
+  },
+  "gen66_results": {
+    "value": "Gen 66 Results (Latest): Paper Review - 52% accuracy (WORSE than gen64's 61%),
+      94% accept rate (EXTREME accept bias). CRITICAL ISSUE: Paper review went backwards
+      - gen65 changes over-corrected.",
+    "timestamp": "2026-01-07T01:03:41.176643"
+  },
+  "iteration_66_improvement": {
+    "value": "Iteration 66 Improvement: CORRECTED paper review prompt after gen65 over-correction.
+      New approach: (1) Clear REJECT criteria with specific triggers, (2) Decision Protocol
+      with explicit thresholds (~40%/~60%), (3) Borderline guidance defaults to REJECT.
+      Target: 62-64% accuracy with 55-65% reject rate.",
+    "timestamp": "2026-01-07T01:06:35.559820"
+  }
+}
+\end{lstlisting}

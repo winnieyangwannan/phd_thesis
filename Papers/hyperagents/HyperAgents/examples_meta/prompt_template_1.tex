@@ -1,0 +1,15 @@
+\begin{lstlisting}[language=Python]
+STANDARD_TEMPLATES = {
+    "reasoning": PromptTemplate(
+        "Analyze and solve this task step-by-step:\n\n{task_description}\n\n"
+        "Provide reasoning and your final answer in JSON format."
+    ),
+    "concise": PromptTemplate(
+        "Solve: {task_description}\n\nRespond with JSON containing your answer."
+    ),
+    "detailed": PromptTemplate(
+        "Task: {task_description}\n\n"
+        "Provide a detailed solution with reasoning, approach, and answer."
+    ),
+}
+\end{lstlisting}

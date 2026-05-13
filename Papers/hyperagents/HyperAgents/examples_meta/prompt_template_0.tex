@@ -1,0 +1,49 @@
+\begin{lstlisting}[language=Python]
+class PromptTemplate:
+    """Base class for prompt templates."""
+
+    def __init__(self, template: str):
+        self.template = template
+
+    def format(self, **kwargs) -> str:
+        return self.template.format(**kwargs)
+
+
+class TaskPromptBuilder:
+    """Builder for constructing task-specific prompts."""
+
+    @staticmethod
+    def build_reasoning_prompt(task_input: dict, domain: str) -> str:
+        """Build a prompt that encourages step-by-step reasoning."""
+        return f"""You are an expert problem-solving agent in the {domain} domain.
+
+Task Input: {task_input}
+
+Please solve this task using the following approach:
+1. **Understanding**: Carefully analyze what the task is asking
+2. **Planning**: Outline your approach to solving this task
+3. **Execution**: Apply your plan step-by-step
+4. **Verification**: Check if your answer makes sense
+
+Provide your response in JSON format:
+<json>
+{{
+    "understanding": "What the task requires",
+    "plan": "Your approach to solve it",
+    "reasoning": "Step-by-step execution",
+    "response": "Your final answer"
+}}
+</json>"""
+
+    @staticmethod
+    def build_few_shot_prompt(task_input: dict, domain: str, examples: list) -> str:
+        """Build a prompt with few-shot examples."""
+        examples_text = "\n\n".join([
+            f"Example {i+1}:\nTask: {ex['task']}\nSolution: {ex['solution']}"
+            for i, ex in enumerate(examples)
+        ])
+        return f"""You are solving a {domain} task. Here are some examples:
+{examples_text}
+
+Now solve this task: {task_input}"""
+\end{lstlisting}

@@ -1,0 +1,323 @@
+% gen_3
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 9ab8761..c00d167 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -11,10 +11,25 @@ Keep in mind the standards at the IMO are extremely high...
+
+ ### General Scoring Rubric
+ Scores are assigned on a 0-7 scale. The general guidelines are:
+-* **7 Points (Correct):** The solution is complete, correct, and fully rigorous...
+-* **6 Points (Almost Correct):** The solution is almost correct with a sound core argument, but contains minor errors...
+-* **1 Point (Partial Progress):** The solution demonstrates substantial progress explicitly mentioned in the grading guidelines...
+-* **0 Points (Incorrect):** The solution doesn't make substantial progress...
++
++* **7 Points (Correct):** The solution is complete, correct, and fully rigorous with no gaps or errors. All major steps are proven with full rigor. Every claim is justified or routine to verify...
++
++* **6 Points (Almost Correct):** The solution has ALL the major ideas and the core argument structure is sound, but contains ONE OR MORE of these minor issues:
++  - Minor algebraic/arithmetic errors that don't affect the main argument
++  - Small logical gaps that are straightforward to fill
++  - Missing routine verifications that an expert could easily supply
++  - **NOT eligible for 6 points**: Missing proofs for major lemmas, unjustified non-trivial claims, incomplete case analysis, or fundamental logical gaps
++  - **Key test**: Would an expert say "this is essentially correct, just needs minor cleanup"?
++
++* **1 Point (Partial Progress):** The solution demonstrates substantial progress on a KEY component that is explicitly mentioned in the grading guidelines for partial credit.
++  - **CRITICAL**: Carefully read the Specific Grading Guidelines section to see what counts as partial credit
++  - The solution must achieve one of the specific milestones listed in the guidelines
++  - Must make non-trivial progress toward the solution (not just initial observations)
++  - Reformulating the problem without making substantive headway is NOT sufficient
++  - Proving lemmas NOT mentioned in grading guidelines is NOT sufficient
++  - **If the guidelines list specific achievements for partial credit and the solution achieves ANY of them, award 1 point**
++
++* **0 Points (Incorrect):** The solution doesn't make substantial progress on key steps mentioned in grading guidelines, is fundamentally flawed, or makes only trivial observations.
+
+ ### Evaluation Process
+ You must follow this structured process:
+-1. **Analyze References:** Meticulously read and understand the problem...
+-2. **Step-by-Step Verification:** Verify the logical validity and rigor of every step...
+-3. **Assess Progress:** Determine the extent of non-trivial progress made.
+-4. **Score Determination:** Compare the findings against the Specific Grading Guidelines...
++
++1. **Analyze References:** Meticulously read and understand the problem and Ground Truth Solution. Carefully review the Specific Grading Guidelines to identify:
++   - The key steps required for a complete solution
++   - **What specific progress qualifies for partial credit (1 point)** - this is crucial!
++   - What distinguishes "almost correct" (6 points) from "correct" (7 points)
++
++2. **Step-by-Step Verification:** Verify the logical validity and rigor of EVERY step in the proposed solution:
++   - Identify ALL flaws, gaps, assumptions, and errors
++   - Check if gaps are "minor and routine" (possibly 6 pts) or "major" (0-1 pts)
++   - **Be careful**: Some solutions may appear correct but have hidden gaps or unjustified leaps
++   - Distinguish between minor calculation errors vs fundamental logical flaws
++
++3. **Assess Progress Against Grading Guidelines:**
++   - **Does the solution achieve the specific milestones mentioned for partial credit?**
++   - Does it have all major components with only minor fixable issues (6 points)?
++   - Or does it have complete rigor with no gaps (7 points)?
++
++4. **Score Determination:** Apply this decision tree:
++   - **If solution is complete and rigorous with no errors or gaps -> 7 points**
++   - **If solution has all major ideas but minor fixable issues -> 6 points**
++   - **If solution makes substantial progress mentioned in grading guidelines -> 1 point**
++   - **Otherwise -> 0 points**
+
++### Critical Reminders for Accurate Grading
++
++**Common Grading Errors to AVOID:**
++1. **Being too lenient with 7 points**: If there are ANY gaps (even minor ones that need filling), it's 6 points, not 7.
++2. **Missing partial credit**: Check the grading guidelines carefully - if the solution achieves ANY milestone mentioned for partial credit, award 1 point.
++3. **Confusing "good attempt" with "almost correct"**: 6 points requires ALL major ideas to be present, not just a good start.
++4. **Ignoring unjustified claims**: Statements like "it's easy to see" or "clearly" must actually be clear/easy. If non-trivial, it's a gap.
+
++**Score Distribution Calibration:**
++- Most solutions will be 0 or 7 points (either fundamentally flawed or correct)
++- 6 points should be rare (only when truly "almost there" with all ideas present)
++- 1 point should match specific milestones in grading guidelines
++- When in doubt, be strict: IMO standards are extremely high
+\end{lstlisting}
+
+% gen_9
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index c00d167..72475b6 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -28,8 +28,11 @@ Scores are assigned on a 0-7 scale...
+   - Proving lemmas NOT mentioned in grading guidelines is NOT sufficient
+   - **If the guidelines list specific achievements for partial credit and the solution achieves ANY of them, award 1 point**
++  - **IMPORTANT**: Even if the solution has major flaws or is incomplete, if it achieves ANY specific milestone from the guidelines, it deserves 1 point, not 0
+
+ * **0 Points (Incorrect):** The solution doesn't make substantial progress...
++  - **CRITICAL CHECK**: Before assigning 0 points, verify that the solution does NOT achieve ANY of the partial credit milestones listed in the grading guidelines
++  - If even ONE milestone is achieved, the score should be 1 point, not 0
+
++3. **MANDATORY Partial Credit Milestone Check:**
++   - **THIS STEP IS REQUIRED - DO NOT SKIP**
++   - List each partial credit milestone explicitly from the grading guidelines
++   - For EACH milestone, determine: Does the solution achieve this? YES/NO
++   - If ANY milestone shows YES -> the score must be at least 1 point
++   - This check must happen BEFORE considering 0 points
+
++5. **Score Determination:** Apply this decision tree:
++   - **FIRST**: Did the solution achieve ANY partial credit milestone from the guidelines?
++     - If YES -> Score is AT LEAST 1 point (proceed to check for higher scores)
++     - If NO -> Score is 0 points (stop here)
++
++   - **If score >= 1, check for higher scores:**
++     - Is the solution complete and rigorous with no errors or gaps? -> 7 points
++     - Does it have ALL major ideas with only minor fixable issues? -> 6 points
++     - Otherwise -> 1 point
+
++**REQUIRED EVALUATION FORMAT:**
++You MUST structure your response as follows:
++
++1. **List Partial Credit Milestones**: Explicitly list each milestone from the grading guidelines
++2. **Check Each Milestone**: For each milestone, state whether the solution achieves it (YES/NO)
++3. **Determine Minimum Score**: If ANY milestone is YES, the minimum score is 1 point
++4. **Detailed Analysis**: Provide your complete evaluation
++5. **Final Score**: Provide the score in the required format
+\end{lstlisting}
+
+% gen_48
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 72475b6..62e975b 100644
+--- a/task_agent.py
++++ b/task_agent.py
++* **7 Points (Correct):** The solution is complete, correct, and fully rigorous with no gaps or errors. All major steps are proven with full rigor. Every claim is justified or truly routine to verify...
++  - **Critical requirements**: Solution must (1) address ALL parts of the problem, (2) prove ALL necessary claims, and (3) have NO unjustified leaps
++  - Every "clearly" or "obviously" must be genuinely trivial to an IMO expert
++  - All edge cases, special cases, and boundary conditions must be handled
+
++* **6 Points (Almost Correct):** The solution has ALL the major ideas and the core argument structure is sound, but contains ONE OR MORE of these **minor** issues:
++  - Minor algebraic/arithmetic errors that don't affect the main argument (e.g., writing 2n+1 instead of 2n+2 but the logic still holds)
++  - Small logical gaps that are straightforward to fill (e.g., "clearly" statements that are indeed clear to an expert)
++  - Missing routine verifications that an expert could easily supply (e.g., obvious algebra steps)
++  - **NOT eligible for 6 points**: Missing proofs for major lemmas, unjustified non-trivial claims, incomplete case analysis, fundamental logical gaps, or missing key components
++  - **Key test**: Would an expert say "this is essentially correct, just needs minor cleanup"? The solution structure is complete and sound.
++  - **Example of 6 points**: A proof that has all the right ideas and structure but makes a small computational error that doesn't invalidate the approach
++  - **Example of NOT 6 points**: A proof that sketches the right approach but leaves out the proof of a crucial intermediate result
+
++2. **Step-by-Step Verification:** Verify the logical validity and rigor of EVERY step in the proposed solution:
++   - Identify ALL flaws, gaps, assumptions, and errors
++   - For EACH "clearly" or "obviously" statement: Is it truly routine or does it hide significant work?
++   - Check if gaps are "minor and routine" (possibly 6 pts) or "major" (0-1 pts)
++   - **Be careful**: Some solutions may appear correct but have hidden gaps or unjustified leaps
++   - Distinguish between minor calculation errors vs fundamental logical flaws
++   - **Rigor check**: Are intermediate results properly proven? Are all cases covered? Are inequalities/equalities justified?
+
++4. **Assess Overall Quality and Completeness:**
++   - **For 7 points**: Check that EVERY claim is proven, EVERY case is handled, NO unjustified leaps exist
++   - **For 6 points**: Verify ALL major components are present and the solution structure is complete (not just a good start)
++   - **For 1 point**: Confirm at least ONE specific milestone from guidelines is achieved
++   - **For 0 points**: Verify NO milestones from guidelines are achieved
+
++**Examples to Calibrate Your Judgment:**
++- **7 points**: "The proof correctly establishes X by showing Y, handles all cases including Z, and proves every intermediate claim with full rigor."
++- **6 points**: "The proof has the complete structure and all major steps, but writes 'it is clear that' for a non-trivial step that needs 2-3 lines to verify."
++- **1 point**: "The solution proves Lemma A which is specifically mentioned in grading guidelines as worth partial credit, but doesn't complete the full proof."
++- **0 points**: "The solution makes interesting observations and tries several approaches, but doesn't achieve any of the specific milestones listed in the guidelines."
+\end{lstlisting}
+
+% gen_54
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 62e975b..a033aa1 100644
+--- a/task_agent.py
++++ b/task_agent.py
++### CRITICAL: Four-Category Classification System
++
++Before diving into details, first classify the solution into ONE of these four categories:
++
++1. **COMPLETE & RIGOROUS**: Has all components, all proofs, handles all cases, no gaps -> 7 points
++2. **NEARLY COMPLETE**: Has complete structure + all major ideas, only minor polish needed -> 6 points (RARE: ~5%)
++3. **MEANINGFUL PROGRESS**: Achieves at least ONE specific milestone from grading guidelines -> 1 point (~25%)
++4. **INSUFFICIENT**: No specific milestones achieved, only trivial observations -> 0 points
++
++**Key Decision Points:**
++- 7 vs 6: "Any gaps at all, even fixable ones?" If yes -> 6
++- 6 vs 1: "Complete proof structure with ALL major steps present?" If no -> must be 1 or 0
++- 1 vs 0: "Achieves ANY milestone listed in guidelines?" If no -> 0
+
++* **1 Point (Partial Progress):** The solution demonstrates substantial progress on a KEY component that is explicitly mentioned in the grading guidelines for partial credit.
++  - **CRITICAL**: You MUST check the "Specific Grading Guidelines" section below - it lists EXACTLY what qualifies for partial credit
++  - The solution must achieve at least ONE of the specific milestones listed in those guidelines
++  - **IMPORTANT DISTINCTIONS**:
++    * DOES count: Achieving a milestone listed in the guidelines (even with errors elsewhere)
++    * Does NOT count: General progress, clever observations, or lemmas NOT in the guidelines
++    * Does NOT count: Reformulating the problem without substantive progress
++    * Does NOT count: Incorrect attempts that seem "on the right track"
++  - **Examples of valid partial credit**:
++    * Guidelines say "partial credit for proving Lemma X" -> solution proves Lemma X correctly -> 1 point
++    * Guidelines say "partial credit for establishing the recurrence relation" -> solution establishes it -> 1 point
++  - **Examples that do NOT qualify for partial credit**:
++    * Solution tries several approaches but none matches a guideline milestone -> 0 points
++    * Solution proves a useful lemma not mentioned in guidelines -> 0 points (no matter how clever)
++    * Solution has the "right idea" but doesn't complete any guideline milestone -> 0 points
+
++**Common Grading Errors to AVOID (based on actual evaluation data):**
++
++1. **ERROR #1: Missing partial credit (11 cases last eval - partial -> incorrect)**
++   - MISTAKE: Marking solutions as 0 points that actually achieve guideline milestones
++   - FIX: Before assigning 0, explicitly list EACH milestone and check if achieved
++   - **Process**: "Does solution achieve milestone 1? NO. Milestone 2? NO. ..." Only if ALL are NO -> 0 points
++
++2. **ERROR #2: Awarding partial to incorrect solutions (7 cases - incorrect -> partial)**
++   - MISTAKE: Giving 1 point for "interesting work" or "right direction" not in guidelines
++   - FIX: Only award 1 point if solution achieves an EXACT milestone listed in guidelines
++
++3. **ERROR #3: Confusing "almost" with "correct" (5 cases - almost -> correct)**
++   - MISTAKE: Awarding 7 points when gaps exist (even minor, fillable gaps)
++   - FIX: If ANY gap needs filling (even routine) -> 6 points, NOT 7
++
++4. **ERROR #4: Over-rewarding partial progress (5 cases - partial -> correct)**
++   - MISTAKE: Awarding 7 points to solutions that achieve only some milestones
++   - FIX: Check if solution solves ENTIRE problem or just proves partial results
+
++5. **ERROR #5: Over-using 6 points**
++   - MISTAKE: Awarding 6 for "good progress" or "most of the way there"
++   - FIX: 6 requires COMPLETE solution structure with ALL major steps, just minor polish needed
++   - **Frequency check**: 6 points should be RARE (~5% of solutions)
+
++**Score Distribution Calibration (Expected Distribution):**
++- ~35% score 7 (correct): Complete, rigorous solutions with no gaps
++- ~35% score 0 (incorrect): No guideline milestones achieved
++- ~24% score 1 (partial): Achieve at least one specific guideline milestone
++- ~6% score 6 (almost): RARE - complete structure with only minor fixable issues
+\end{lstlisting}
+
+% gen_56
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index a033aa1..86320b1 100644
+--- a/task_agent.py
++++ b/task_agent.py
+ **Key Decision Points:**
+ - 7 vs 6: "Any gaps at all, even fixable ones?" If yes -> 6
+ - 6 vs 1: "Complete proof structure with ALL major steps present?" If no -> must be 1 or 0
+-- 1 vs 0: "Achieves ANY milestone listed in guidelines?" If no -> 0
++- **1 vs 0 (MOST CRITICAL)**: "Does the solution EXPLICITLY ACHIEVE any milestone from the grading guidelines?"
++  * Read each milestone carefully and check if solution PROVES/ESTABLISHES it
++  * "Attempts" or "makes progress toward" a milestone != ACHIEVES it
++  * Must have concrete proof/result that matches milestone description
++  * If uncertain, re-read the milestone requirements and check for explicit completion
+
++    * Does NOT count: Stating a result without proving it
++    * Does NOT count: Getting "close" to a milestone but not completing it
++    * Solution states a milestone result but doesn't prove it -> 0 points
++    * Solution proves 80% of what's needed for a milestone -> 0 points (must be complete)
++  - **VERIFICATION CHECKLIST for each milestone**:
++    1. What exactly does the milestone require?
++    2. Does the solution provide a complete proof/derivation of this?
++    3. Are there any gaps or unjustified steps in achieving this milestone?
++    4. If there are gaps, is the milestone still considered "achieved"? (Usually NO)
+
++2. **Check Each Milestone**: For each milestone, systematically verify:
++   - What the milestone requires (quote from guidelines)
++   - What the solution provides (specific evidence)
++   - Does it FULLY achieve the milestone? (YES/NO with clear reasoning)
++   - Key distinction: "attempts" or "partial progress" toward milestone = NO
+
++**CRITICAL REMINDER FOR MILESTONE CHECKING:**
++- Be precise: A milestone is achieved only if the solution COMPLETES what the milestone describes
++- Common mistake: Giving credit for "working toward" a milestone (this should be 0 points)
++- When in doubt: Re-read the milestone requirement and check if solution fully satisfies it
+\end{lstlisting}
+
+% gen_71
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 86320b1..f1dd3ac 100644
+--- a/task_agent.py
++++ b/task_agent.py
+ Before diving into details, first classify the solution into ONE of these four categories:
+
+-1. **COMPLETE & RIGOROUS**: Has all components, all proofs, handles all cases, no gaps -> 7 points
++1. **COMPLETE & RIGOROUS**: Has all components, all proofs, handles all cases, ZERO gaps -> 7 points
+ 2. **NEARLY COMPLETE**: Has complete structure + all major ideas, only minor polish needed -> 6 points (RARE: ~5%)
+ 3. **MEANINGFUL PROGRESS**: Achieves at least ONE specific milestone from grading guidelines -> 1 point (~25%)
+ 4. **INSUFFICIENT**: No specific milestones achieved, only trivial observations -> 0 points
+
+ **Key Decision Points:**
+-- 7 vs 6: "Any gaps at all, even fixable ones?" If yes -> 6
++- **7 vs 6 (CRITICAL - BE STRICT)**: "Is this solution PUBLICATION-READY with ZERO gaps, ZERO unjustified steps, ZERO hand-waving?"
++  * ANY gap, even minor -> automatically 6 points maximum
++  * ANY "clearly", "obviously", "it follows" that needs verification -> 6 points
++  * ANY missing routine verification -> 6 points
++  * ANY computational error, however minor -> 6 points
++  * 7 points requires PERFECTION - when in doubt, give 6 points
+ - 6 vs 1: "Complete proof structure with ALL major steps present?" If no -> must be 1 or 0
+-- **1 vs 0 (MOST CRITICAL)**: "Does the solution EXPLICITLY ACHIEVE any milestone from the grading guidelines?"
++- **1 vs 0**: "Does the solution EXPLICITLY ACHIEVE any milestone from the grading guidelines?"
+   * Read each milestone carefully and check if solution PROVES/ESTABLISHES it
+   * "Attempts" or "makes progress toward" a milestone != ACHIEVES it
+   * Must have concrete proof/result that matches milestone description
+
+-* **7 Points (Correct):** The solution is complete, correct, and fully rigorous with no gaps or errors...
++* **7 Points (Correct):** The solution is complete, correct, and fully rigorous with ABSOLUTELY NO gaps or errors. All major steps are proven with full rigor. Every claim is justified or truly routine to verify...
++  - **Critical requirements**: Solution must (1) address ALL parts of the problem, (2) prove ALL necessary claims with full detail, and (3) have NO unjustified leaps whatsoever
++  - Every "clearly" or "obviously" must be genuinely trivial to an IMO expert - if it takes >30 seconds to verify, it's not trivial
++  - All edge cases, special cases, and boundary conditions must be explicitly handled
++  - **BE EXTREMELY STRICT**: 7 points should be RARE (target: ~30-40% of solutions). Most good solutions have minor gaps -> give 6 points
+
+-* **6 Points (Almost Correct):** The solution has ALL the major ideas and the core argument structure is sound...
++* **6 Points (Almost Correct):** The solution has ALL the major ideas and the COMPLETE argument structure, but contains ONE OR MORE of these **minor** issues:
+   - Minor algebraic/arithmetic errors that don't affect the main argument
+-  - Small logical gaps that are straightforward to fill
++  - Small logical gaps that are straightforward to fill (e.g., "clearly" statements that need 1-2 lines to verify)
+   - Missing routine verifications that an expert could easily supply
++  - Citations of standard theorems without proof (acceptable at IMO level)
+   - **NOT eligible for 6 points**: Missing proofs for major lemmas, unjustified non-trivial claims, incomplete case analysis, fundamental logical gaps, or missing key components
+   - **Key test**: Would an expert say "this is essentially correct, just needs minor cleanup"? The solution structure is complete and sound.
++  - **IMPORTANT**: 6 points means the solution is COMPLETE but not PERFECT. If major steps are missing -> give 1 point instead.
+
+ * **1 Point (Partial Progress):** The solution demonstrates substantial progress on a KEY component...
+   - **IMPORTANT DISTINCTIONS**:
+     * DOES count: Achieving a milestone listed in the guidelines (even with errors elsewhere)
++    * DOES count: Equivalent formulations of guideline milestones (recognize reformulations)
+     * Does NOT count: General progress, clever observations, or lemmas NOT in the guidelines
+     * Does NOT count: Reformulating the problem without substantive progress
+     * Does NOT count: Incorrect attempts that seem "on the right track"
+     * Solution proves a useful lemma not mentioned in guidelines -> 0 points (no matter how clever)
++  - **When grading partial credit, be MORE LENIENT**: If the solution substantially achieves a milestone (even with minor gaps), give the point
+\end{lstlisting}

@@ -1,0 +1,1085 @@
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 3798256..2ad2c5f 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -1,11 +1,12 @@
+ from agent.base_agent import AgentSystem
+ from agent.llm_withtools import chat_with_agent
+ from utils.common import extract_jsons
++import json
+ 
+ class TaskAgent(AgentSystem):
+     def forward(self, inputs):
+         """
+-        An agent that solves a given task.
++        An agent that solves a given task with enhanced reasoning capabilities.
+ 
+         Args:
+             inputs (dict): A dictionary with input data for the task.
+@@ -15,30 +16,62 @@ class TaskAgent(AgentSystem):
+                 - prediction (str): The prediction made by the agent.
+                 - new_msg_history (list): A list of messages representing the message history of the interaction.
+         """
+-        domain = inputs['domain']
+-        instruction = f"""You are an agent.
++        domain = inputs.get('domain', 'unknown')
++        
++        # Enhanced instruction with step-by-step reasoning
++        instruction = f"""You are an expert agent solving tasks in the {domain} domain.
+ 
+ Task input:
+ ```
+-{inputs}
++{json.dumps(inputs, indent=2)}
+ ```
+ 
++Approach this task systematically:
++1. Carefully analyze the task requirements
++2. Break down the problem into manageable steps
++3. Consider edge cases and potential pitfalls
++4. Formulate your solution with clear reasoning
++5. Verify your answer makes sense in context
++
+ Respond in JSON format with the following schema:
+ <json>
+ {{
+-    "response": ...
++    "reasoning": "Your step-by-step thought process",
++    "response": "Your final answer",
++    "confidence": "high/medium/low - your confidence level"
+ }}
+ </json>"""
++        
+         new_msg_history = chat_with_agent(instruction, model=self.model, msg_history=[], logging=self.log)
+ 
+-        # Extract the response
++        # Extract the response with improved error handling
+         prediction = "None"
+         try:
+             extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
+-            if extracted_jsons is not None and "response" in extracted_jsons[-1]:
+-                prediction = extracted_jsons[-1]['response']
++            if extracted_jsons is not None and len(extracted_jsons) > 0:
++                response_data = extracted_jsons[-1]
++                
++                # Log reasoning if available for debugging
++                if "reasoning" in response_data:
++                    self.log(f"Agent reasoning: {response_data['reasoning']}")
++                if "confidence" in response_data:
++                    self.log(f"Confidence level: {response_data['confidence']}")
++                
++                # Extract the actual response
++                if "response" in response_data:
++                    prediction = response_data['response']
++                else:
++                    self.log("Warning: No 'response' field found in JSON output")
++                    # Fallback: try to extract any meaningful output
++                    prediction = str(response_data.get('answer', response_data))
++            else:
++                self.log("Warning: No JSON found in agent output, using raw text")
++                # Attempt to use raw text as fallback
++                if new_msg_history and 'text' in new_msg_history[-1]:
++                    prediction = new_msg_history[-1]['text'][:500]  # Truncate if too long
+         except Exception as e:
+             self.log(f"Error extracting prediction: {e}")
++            self.log(f"Raw output: {new_msg_history[-1].get('text', 'N/A')[:200]}")
+             prediction = "None"
+ 
+         return prediction, new_msg_history
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 2ad2c5f..b5f2936 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -17,9 +17,31 @@ class TaskAgent(AgentSystem):
+                 - new_msg_history (list): A list of messages representing the message history of the interaction.
+         """
+         domain = inputs.get('domain', 'unknown')
++        problem = inputs.get('problem', '')
+         
+-        # Enhanced instruction with step-by-step reasoning
+-        instruction = f"""You are an expert agent solving tasks in the {domain} domain.
++        # Domain-specific guidance for mathematical proofs
++        if domain == 'imo_proof':
++            instruction = f"""You are an expert mathematician solving an IMO-level proof problem.
++
++Problem:
++{problem}
++
++IMPORTANT: Your solution must be COMPLETE and RIGOROUS:
++1. Find all solutions or prove the statement
++2. Show your work with clear logical steps
++3. VERIFY that your candidates actually satisfy the original equation/condition
++4. State your final answer clearly and concisely
++
++Common mistakes to avoid:
++- Forgetting to verify that found candidates are actual solutions
++- Missing edge cases or special values
++- Not considering all possible cases
++- Incomplete final answer statement
++
++Provide your complete solution as a single cohesive proof. Be concise but rigorous."""
++        else:
++            # Enhanced instruction with step-by-step reasoning for other domains
++            instruction = f"""You are an expert agent solving tasks in the {domain} domain.
+ 
+ Task input:
+ ```
+@@ -47,28 +69,35 @@ Respond in JSON format with the following schema:
+         # Extract the response with improved error handling
+         prediction = "None"
+         try:
+-            extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
+-            if extracted_jsons is not None and len(extracted_jsons) > 0:
+-                response_data = extracted_jsons[-1]
+-                
+-                # Log reasoning if available for debugging
+-                if "reasoning" in response_data:
+-                    self.log(f"Agent reasoning: {response_data['reasoning']}")
+-                if "confidence" in response_data:
+-                    self.log(f"Confidence level: {response_data['confidence']}")
+-                
+-                # Extract the actual response
+-                if "response" in response_data:
+-                    prediction = response_data['response']
+-                else:
+-                    self.log("Warning: No 'response' field found in JSON output")
+-                    # Fallback: try to extract any meaningful output
+-                    prediction = str(response_data.get('answer', response_data))
+-            else:
+-                self.log("Warning: No JSON found in agent output, using raw text")
+-                # Attempt to use raw text as fallback
++            # For IMO proof domain, extract raw text directly (they don't use JSON format)
++            if domain == 'imo_proof':
+                 if new_msg_history and 'text' in new_msg_history[-1]:
+-                    prediction = new_msg_history[-1]['text'][:500]  # Truncate if too long
++                    prediction = new_msg_history[-1]['text'].strip()
++                    self.log(f"IMO proof solution extracted (length: {len(prediction)} chars)")
++            else:
++                # For other domains, use JSON extraction
++                extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
++                if extracted_jsons is not None and len(extracted_jsons) > 0:
++                    response_data = extracted_jsons[-1]
++                    
++                    # Log reasoning if available for debugging
++                    if "reasoning" in response_data:
++                        self.log(f"Agent reasoning: {response_data['reasoning']}")
++                    if "confidence" in response_data:
++                        self.log(f"Confidence level: {response_data['confidence']}")
++                    
++                    # Extract the actual response
++                    if "response" in response_data:
++                        prediction = response_data['response']
++                    else:
++                        self.log("Warning: No 'response' field found in JSON output")
++                        # Fallback: try to extract any meaningful output
++                        prediction = str(response_data.get('answer', response_data))
++                else:
++                    self.log("Warning: No JSON found in agent output, using raw text")
++                    # Attempt to use raw text as fallback
++                    if new_msg_history and 'text' in new_msg_history[-1]:
++                        prediction = new_msg_history[-1]['text'][:500]  # Truncate if too long
+         except Exception as e:
+             self.log(f"Error extracting prediction: {e}")
+             self.log(f"Raw output: {new_msg_history[-1].get('text', 'N/A')[:200]}")
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index b5f2936..f203532 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -26,19 +26,37 @@ class TaskAgent(AgentSystem):
+ Problem:
+ {problem}
+ 
+-IMPORTANT: Your solution must be COMPLETE and RIGOROUS:
+-1. Find all solutions or prove the statement
+-2. Show your work with clear logical steps
+-3. VERIFY that your candidates actually satisfy the original equation/condition
+-4. State your final answer clearly and concisely
+-
+-Common mistakes to avoid:
+-- Forgetting to verify that found candidates are actual solutions
+-- Missing edge cases or special values
+-- Not considering all possible cases
+-- Incomplete final answer statement
+-
+-Provide your complete solution as a single cohesive proof. Be concise but rigorous."""
++CRITICAL REQUIREMENTS for a complete solution:
++
++1. **LOGICAL RIGOR**: Every claim must be justified. Do not skip steps or make unjustified leaps.
++   - Prove each intermediate result before using it
++   - State clearly why each implication follows
++   - Avoid handwaving or circular reasoning
++
++2. **COMPLETENESS**: Address all aspects of the problem.
++   - For "find all" problems: prove you found ALL solutions (show no others exist)
++   - Consider all cases systematically
++   - Check boundary conditions and edge cases (x=0, x=1, etc.)
++
++3. **VERIFICATION**: Always verify your answer.
++   - Substitute candidates back into original equation
++   - Confirm all problem conditions are satisfied
++   - Check that claimed properties (injectivity, surjectivity, etc.) actually hold
++
++4. **STRUCTURE**: Organize your proof clearly.
++   - State what you will prove
++   - Break into logical steps or cases
++   - Conclude with a clear final answer
++
++Common IMO grading pitfalls to AVOID:
++- Guessing a solution without proving uniqueness
++- Claiming something is "obvious" without justification
++- Using results you haven't proven
++- Incomplete case analysis
++- Missing verification step
++
++Your proof will be graded strictly by IMO standards. Incomplete or unsound arguments receive 0 points.
++Provide a complete, rigorous, self-contained proof."""
+         else:
+             # Enhanced instruction with step-by-step reasoning for other domains
+             instruction = f"""You are an expert agent solving tasks in the {domain} domain.
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index f203532..9e4d3b1 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -26,37 +26,75 @@ class TaskAgent(AgentSystem):
+ Problem:
+ {problem}
+ 
+-CRITICAL REQUIREMENTS for a complete solution:
+-
+-1. **LOGICAL RIGOR**: Every claim must be justified. Do not skip steps or make unjustified leaps.
+-   - Prove each intermediate result before using it
+-   - State clearly why each implication follows
+-   - Avoid handwaving or circular reasoning
+-
+-2. **COMPLETENESS**: Address all aspects of the problem.
+-   - For "find all" problems: prove you found ALL solutions (show no others exist)
+-   - Consider all cases systematically
+-   - Check boundary conditions and edge cases (x=0, x=1, etc.)
+-
+-3. **VERIFICATION**: Always verify your answer.
+-   - Substitute candidates back into original equation
+-   - Confirm all problem conditions are satisfied
+-   - Check that claimed properties (injectivity, surjectivity, etc.) actually hold
+-
+-4. **STRUCTURE**: Organize your proof clearly.
+-   - State what you will prove
+-   - Break into logical steps or cases
+-   - Conclude with a clear final answer
+-
+-Common IMO grading pitfalls to AVOID:
+-- Guessing a solution without proving uniqueness
+-- Claiming something is "obvious" without justification
+-- Using results you haven't proven
+-- Incomplete case analysis
+-- Missing verification step
+-
+-Your proof will be graded strictly by IMO standards. Incomplete or unsound arguments receive 0 points.
+-Provide a complete, rigorous, self-contained proof."""
++[!] CRITICAL: COMPLETENESS IS MANDATORY [!]
++Phras like "omitted for brevity", "details left to reader", or "routine verification" = AUTOMATIC ZERO POINTS.
++You MUST write out EVERY step explicitly. No shortcuts allowed.
++
++===================================================================
++MANDATORY SOLUTION STRUCTURE - Follow ALL 4 Stages:
++===================================================================
++
++**STAGE 1: PROBLEM ANALYSIS & EXPLORATION**
++You MUST:
++- Restate problem in your own words
++- Identify mathematical structures (functions, inequalities, sequences, etc.)
++- List 3-5 potential approaches:
++  * Functional equations: substitution patterns, injectivity/surjectivity
++  * Inequalities: AM-GM, Cauchy-Schwarz, calculus, convexity
++  * Number theory: modular arithmetic, divisibility arguments
++  * Combinatorics: counting, pigeonhole, constructive proofs
++- Test small cases (x=0, x=1, n=1, n=2) to build intuition
++
++**STAGE 2: STRATEGY SELECTION**
++You MUST:
++- Choose ONE approach and explain WHY it's best
++- State EXACTLY what you need to prove:
++  * "Find all" = find candidates + prove no others exist
++  * "Prove" = show for ALL cases (not just examples)
++  * "Exists" = construct explicit example
++- List potential pitfalls of your chosen approach
++
++**STAGE 3: COMPLETE RIGOROUS PROOF** 
++[!] THIS IS WHERE MOST POINTS ARE LOST - BE THOROUGH [!]
++You MUST:
++[v] Write EVERY step - no gaps
++[v] Justify EVERY claim ("because..." or "since...")
++[v] For "find all" problems:
++  1. Find candidate solutions (show all work)
++  2. Verify EACH candidate (substitute into ORIGINAL equation)
++  3. Prove NO OTHER solutions exist (completeness argument)
++[v] Handle ALL cases (don't say "similar for other cases")
++[v] Show ALL algebra step-by-step
++[v] If induction: state base, hypothesis, and inductive step explicitly
++[v] If contradiction: state assumption and show explicit contradiction
++[v] If WLOG: explain why generality isn't lost
++
++**STAGE 4: VERIFICATION & FINAL ANSWER**
++You MUST:
++[v] Substitute solutions back into ORIGINAL problem statement
++[v] Verify ALL constraints (not just one)
++[v] Check edge/boundary cases (x=0, n=1, equality in inequalities)
++[v] For functions: verify claimed properties (injective, surjective, continuous)
++[v] State final answer in box or clear statement: "Therefore, the solutions are..."
++
++===================================================================
++[X] FORBIDDEN - These phrases guarantee 0 points:
++===================================================================
++- "omitted for brevity" / "omit details"
++- "left as exercise" / "left to reader"
++- "routine" / "straightforward" / "trivial"
++- "clearly" / "obviously" / "it is easy to see" (without proof)
++- "similar argument" (without showing it)
++- "WLOG" (without justification)
++
++===================================================================
++GRADING REALITY CHECK:
++===================================================================
++- Correct answer but incomplete proof = 0-1 points (not full credit)
++- Sketch without details = 0 points
++- Only COMPLETE, FULLY-WRITTEN, RIGOROUS proofs get 7/7 points
++
++Now solve the problem following ALL 4 stages. Write EVERYTHING explicitly."""
+         else:
+             # Enhanced instruction with step-by-step reasoning for other domains
+             instruction = f"""You are an expert agent solving tasks in the {domain} domain.
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 9e4d3b1..61307fc 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -21,80 +21,93 @@ class TaskAgent(AgentSystem):
+         
+         # Domain-specific guidance for mathematical proofs
+         if domain == 'imo_proof':
+-            instruction = f"""You are an expert mathematician solving an IMO-level proof problem.
++            # Phase 1: Generate initial proof attempt
++            phase1_instruction = f"""You are an expert mathematician solving an IMO-level proof problem.
+ 
+ Problem:
+ {problem}
+ 
+-[!] CRITICAL: COMPLETENESS IS MANDATORY [!]
+-Phras like "omitted for brevity", "details left to reader", or "routine verification" = AUTOMATIC ZERO POINTS.
+-You MUST write out EVERY step explicitly. No shortcuts allowed.
+-
+-===================================================================
+-MANDATORY SOLUTION STRUCTURE - Follow ALL 4 Stages:
+-===================================================================
+-
+-**STAGE 1: PROBLEM ANALYSIS & EXPLORATION**
+-You MUST:
+-- Restate problem in your own words
+-- Identify mathematical structures (functions, inequalities, sequences, etc.)
+-- List 3-5 potential approaches:
+-  * Functional equations: substitution patterns, injectivity/surjectivity
+-  * Inequalities: AM-GM, Cauchy-Schwarz, calculus, convexity
+-  * Number theory: modular arithmetic, divisibility arguments
+-  * Combinatorics: counting, pigeonhole, constructive proofs
+-- Test small cases (x=0, x=1, n=1, n=2) to build intuition
+-
+-**STAGE 2: STRATEGY SELECTION**
+-You MUST:
+-- Choose ONE approach and explain WHY it's best
+-- State EXACTLY what you need to prove:
+-  * "Find all" = find candidates + prove no others exist
+-  * "Prove" = show for ALL cases (not just examples)
+-  * "Exists" = construct explicit example
+-- List potential pitfalls of your chosen approach
+-
+-**STAGE 3: COMPLETE RIGOROUS PROOF** 
+-[!] THIS IS WHERE MOST POINTS ARE LOST - BE THOROUGH [!]
+-You MUST:
+-[v] Write EVERY step - no gaps
+-[v] Justify EVERY claim ("because..." or "since...")
+-[v] For "find all" problems:
+-  1. Find candidate solutions (show all work)
+-  2. Verify EACH candidate (substitute into ORIGINAL equation)
+-  3. Prove NO OTHER solutions exist (completeness argument)
+-[v] Handle ALL cases (don't say "similar for other cases")
+-[v] Show ALL algebra step-by-step
+-[v] If induction: state base, hypothesis, and inductive step explicitly
+-[v] If contradiction: state assumption and show explicit contradiction
+-[v] If WLOG: explain why generality isn't lost
+-
+-**STAGE 4: VERIFICATION & FINAL ANSWER**
+-You MUST:
+-[v] Substitute solutions back into ORIGINAL problem statement
+-[v] Verify ALL constraints (not just one)
+-[v] Check edge/boundary cases (x=0, n=1, equality in inequalities)
+-[v] For functions: verify claimed properties (injective, surjective, continuous)
+-[v] State final answer in box or clear statement: "Therefore, the solutions are..."
+-
+-===================================================================
+-[X] FORBIDDEN - These phrases guarantee 0 points:
+-===================================================================
+-- "omitted for brevity" / "omit details"
+-- "left as exercise" / "left to reader"
+-- "routine" / "straightforward" / "trivial"
+-- "clearly" / "obviously" / "it is easy to see" (without proof)
+-- "similar argument" (without showing it)
+-- "WLOG" (without justification)
+-
+-===================================================================
+-GRADING REALITY CHECK:
+-===================================================================
+-- Correct answer but incomplete proof = 0-1 points (not full credit)
+-- Sketch without details = 0 points
+-- Only COMPLETE, FULLY-WRITTEN, RIGOROUS proofs get 7/7 points
+-
+-Now solve the problem following ALL 4 stages. Write EVERYTHING explicitly."""
++[!] CRITICAL GRADING RULES [!]
++* Incomplete proofs = 0 points (even if answer is correct)
++* Every algebraic step must be shown
++* Every claim must be justified
++* "Find all" problems need: (1) find candidates, (2) verify each, (3) prove no others exist
++
++1. EXPLORATION: Identify problem type, test small cases, list 3-5 possible approaches
++2. STRATEGY: Choose one approach and explain why
++3. MAIN PROOF: Show all work with complete algebra and justifications
++4. VERIFICATION: Check solutions satisfy original conditions
++
++Write your proof naturally and thoroughly. Show all algebraic steps."""
++            
++            # Phase 2: Self-critique and detail expansion
++            phase2_instruction = f"""You are a rigorous IMO grader reviewing a proof for completeness.
++
++Original Problem:
++{problem}
++
++Your Initial Proof:
++{{proof_attempt}}
++
++[!] GRADING CHECKLIST - Mark each item [v] or [x]:
++
++**ALGEBRAIC COMPLETENESS:**
++[ ] Are ALL algebraic manipulations shown step-by-step (no jumps)?
++[ ] Is every equation transformation justified?
++[ ] Are simplifications explained (e.g., "since x > 0" or "by factoring")?
++
++**LOGICAL COMPLETENESS:**
++[ ] Is every claim supported by reasoning (no "clearly" or "obviously")?
++[ ] For "find all": Did you (1) find candidates, (2) verify each, (3) prove no others?
++[ ] Are ALL cases handled (not just "similar for other cases")?
++[ ] For WLOG claims: Is the symmetry/generality argument explicit?
++
++**VERIFICATION:**
++[ ] Did you substitute solutions back into the ORIGINAL problem?
++[ ] Are ALL problem constraints checked (not just one)?
++[ ] Are edge cases tested (x=0, n=1, equality conditions, etc.)?
++
++**FORBIDDEN PHRASES CHECK:**
++[ ] No "omitted for brevity", "left to reader", "routine", "trivial" without proof?
++[ ] No "clearly"/"obviously" without justification?
++
++Now do TWO things:
++
++1. **IDENTIFY GAPS**: List specific places where details are missing:
++   - "Line X: jumped from A to B without showing the algebra"
++   - "Did not verify candidate x=2 in original equation"
++   - "Completeness argument missing for why no other solutions exist"
++
++2. **EXPANDED PROOF**: Rewrite the proof filling ALL identified gaps. Show:
++   - Every algebraic step explicitly
++   - Full justifications for each claim
++   - Complete verification of all solutions
++   - Explicit completeness arguments for "find all" problems
++
++Format your response as:
++
++**GAPS IDENTIFIED:**
++[List specific missing details]
++
++**COMPLETE RIGOROUS PROOF:**
++[Full proof with all gaps filled]"""
++            
++            # Execute two-phase proof generation
++            self.log("Phase 1: Generating initial proof attempt...")
++            phase1_history = chat_with_agent(phase1_instruction, model=self.model, msg_history=[], logging=self.log)
++            
++            if phase1_history and 'text' in phase1_history[-1]:
++                proof_attempt = phase1_history[-1]['text'].strip()
++                self.log(f"Phase 1 complete. Proof length: {len(proof_attempt)} chars")
++                
++                # Phase 2: Self-critique and expansion
++                self.log("Phase 2: Self-critique and detail expansion...")
++                phase2_filled = phase2_instruction.replace('{proof_attempt}', proof_attempt)
++                new_msg_history = chat_with_agent(phase2_filled, model=self.model, msg_history=[], logging=self.log)
++                self.log("Phase 2 complete. Two-phase proof generation finished.")
++            else:
++                self.log("Warning: Phase 1 failed, using single-phase approach")
++                new_msg_history = phase1_history
+         else:
+             # Enhanced instruction with step-by-step reasoning for other domains
+             instruction = f"""You are an expert agent solving tasks in the {domain} domain.
+@@ -120,7 +133,7 @@ Respond in JSON format with the following schema:
+ }}
+ </json>"""
+         
+-        new_msg_history = chat_with_agent(instruction, model=self.model, msg_history=[], logging=self.log)
++            new_msg_history = chat_with_agent(instruction, model=self.model, msg_history=[], logging=self.log)
+ 
+         # Extract the response with improved error handling
+         prediction = "None"
+@@ -128,8 +141,22 @@ Respond in JSON format with the following schema:
+             # For IMO proof domain, extract raw text directly (they don't use JSON format)
+             if domain == 'imo_proof':
+                 if new_msg_history and 'text' in new_msg_history[-1]:
+-                    prediction = new_msg_history[-1]['text'].strip()
+-                    self.log(f"IMO proof solution extracted (length: {len(prediction)} chars)")
++                    full_response = new_msg_history[-1]['text'].strip()
++                    
++                    # Extract the "COMPLETE RIGOROUS PROOF" section if it exists (from Phase 2)
++                    if '**COMPLETE RIGOROUS PROOF:**' in full_response:
++                        # Split and get the part after the header
++                        parts = full_response.split('**COMPLETE RIGOROUS PROOF:**')
++                        if len(parts) > 1:
++                            prediction = parts[1].strip()
++                            self.log(f"Extracted Phase 2 expanded proof (length: {len(prediction)} chars)")
++                        else:
++                            prediction = full_response
++                            self.log(f"Phase 2 format detected but couldn't extract, using full response")
++                    else:
++                        # Use full response (Phase 1 only)
++                        prediction = full_response
++                        self.log(f"Using Phase 1 proof (length: {len(prediction)} chars)")
+             else:
+                 # For other domains, use JSON extraction
+                 extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 61307fc..3237ae8 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -103,8 +103,21 @@ Format your response as:
+                 # Phase 2: Self-critique and expansion
+                 self.log("Phase 2: Self-critique and detail expansion...")
+                 phase2_filled = phase2_instruction.replace('{proof_attempt}', proof_attempt)
+-                new_msg_history = chat_with_agent(phase2_filled, model=self.model, msg_history=[], logging=self.log)
+-                self.log("Phase 2 complete. Two-phase proof generation finished.")
++                phase2_history = chat_with_agent(phase2_filled, model=self.model, msg_history=[], logging=self.log)
++                
++                # Check if Phase 2 produced output
++                if phase2_history and 'text' in phase2_history[-1]:
++                    phase2_output = phase2_history[-1]['text'].strip()
++                    # Try to extract the expanded proof from Phase 2
++                    if 'COMPLETE RIGOROUS PROOF' in phase2_output or 'EXPANDED PROOF' in phase2_output:
++                        self.log(f"Phase 2 complete with expanded proof. Total length: {len(phase2_output)} chars")
++                        new_msg_history = phase2_history
++                    else:
++                        self.log("Phase 2 complete but no clear expanded proof marker found, using Phase 2 full output")
++                        new_msg_history = phase2_history
++                else:
++                    self.log("Warning: Phase 2 failed, falling back to Phase 1")
++                    new_msg_history = phase1_history
+             else:
+                 self.log("Warning: Phase 1 failed, using single-phase approach")
+                 new_msg_history = phase1_history
+@@ -143,20 +156,45 @@ Respond in JSON format with the following schema:
+                 if new_msg_history and 'text' in new_msg_history[-1]:
+                     full_response = new_msg_history[-1]['text'].strip()
+                     
+-                    # Extract the "COMPLETE RIGOROUS PROOF" section if it exists (from Phase 2)
+-                    if '**COMPLETE RIGOROUS PROOF:**' in full_response:
+-                        # Split and get the part after the header
+-                        parts = full_response.split('**COMPLETE RIGOROUS PROOF:**')
+-                        if len(parts) > 1:
+-                            prediction = parts[1].strip()
+-                            self.log(f"Extracted Phase 2 expanded proof (length: {len(prediction)} chars)")
++                    # Try to extract the "COMPLETE RIGOROUS PROOF" section if it exists (from Phase 2)
++                    if 'COMPLETE RIGOROUS PROOF:' in full_response:
++                        # Find the section after "COMPLETE RIGOROUS PROOF:"
++                        marker_variants = [
++                            'COMPLETE RIGOROUS PROOF:',
++                            '**COMPLETE RIGOROUS PROOF:**',
++                            'COMPLETE RIGOROUS PROOF',
++                        ]
++                        
++                        extracted = None
++                        for marker in marker_variants:
++                            if marker in full_response:
++                                parts = full_response.split(marker, 1)
++                                if len(parts) > 1:
++                                    extracted = parts[1].strip()
++                                    # Remove any trailing markdown markers
++                                    if extracted.startswith('\n'):
++                                        extracted = extracted.lstrip('\n')
++                                    self.log(f"Extracted Phase 2 expanded proof using marker '{marker}' (length: {len(extracted)} chars)")
++                                    break
++                        
++                        if extracted:
++                            prediction = extracted
+                         else:
++                            # Fallback: use full response if extraction failed
+                             prediction = full_response
+-                            self.log(f"Phase 2 format detected but couldn't extract, using full response")
++                            self.log(f"Phase 2 marker found but extraction failed, using full response (length: {len(prediction)} chars)")
+                     else:
+-                        # Use full response (Phase 1 only)
+-                        prediction = full_response
+-                        self.log(f"Using Phase 1 proof (length: {len(prediction)} chars)")
++                        # No Phase 2 marker found - this might be Phase 1 only or the full Phase 2 response
++                        # Check if it contains "GAPS IDENTIFIED" which indicates Phase 2 format
++                        if 'GAPS IDENTIFIED' in full_response:
++                            # This is Phase 2 output but without clear section markers
++                            # Use the full output as it contains both gaps and expanded proof
++                            prediction = full_response
++                            self.log(f"Using full Phase 2 output with gaps analysis (length: {len(prediction)} chars)")
++                        else:
++                            # Pure Phase 1 output
++                            prediction = full_response
++                            self.log(f"Using Phase 1 proof (length: {len(prediction)} chars)")
+             else:
+                 # For other domains, use JSON extraction
+                 extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 3237ae8..3a0007d 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -21,24 +21,76 @@ class TaskAgent(AgentSystem):
+         
+         # Domain-specific guidance for mathematical proofs
+         if domain == 'imo_proof':
+-            # Phase 1: Generate initial proof attempt
++            # Phase 1: Generate initial proof attempt with comprehensive guidance
+             phase1_instruction = f"""You are an expert mathematician solving an IMO-level proof problem.
+ 
+ Problem:
+ {problem}
+ 
+-[!] CRITICAL GRADING RULES [!]
+-* Incomplete proofs = 0 points (even if answer is correct)
+-* Every algebraic step must be shown
+-* Every claim must be justified
+-* "Find all" problems need: (1) find candidates, (2) verify each, (3) prove no others exist
++----------------------------------------------------------------
++[!]  CRITICAL GRADING RULE: INCOMPLETE PROOFS = 0 POINTS  [!]
++----------------------------------------------------------------
+ 
+-1. EXPLORATION: Identify problem type, test small cases, list 3-5 possible approaches
+-2. STRATEGY: Choose one approach and explain why
+-3. MAIN PROOF: Show all work with complete algebra and justifications
+-4. VERIFICATION: Check solutions satisfy original conditions
++IMO graders give 0 points for:
++* Correct answer without complete proof
++* Phrases like "clearly", "obviously", "trivial" without justification  
++* "Similar for other cases" without showing the work
++* Any gaps in reasoning or algebra
+ 
+-Write your proof naturally and thoroughly. Show all algebraic steps."""
++You MUST write EVERY step explicitly with full justification.
++
++----------------------------------------------------------------
++
++**YOUR SOLUTION APPROACH:**
++
++1. **EXPLORATION & UNDERSTANDING**
++   * What type of problem is this? (inequality, functional equation, number theory, combinatorics, geometry)
++   * What are you asked to find or prove?
++   * Test small cases or special values to build intuition
++   * Identify key patterns, symmetries, or structures
++   * List 3-5 possible approaches with brief pros/cons
++
++2. **STRATEGY SELECTION**
++   * Choose ONE approach and explicitly state why
++   * For inequalities: Consider AM-GM, Cauchy-Schwarz, Jensen's, rearrangement, smoothing
++   * For "find all": Must do (a) find candidates, (b) verify each, (c) prove no others exist
++   * Outline the main steps of your proof strategy
++
++3. **COMPLETE RIGOROUS PROOF**
++   * Show EVERY algebraic manipulation step-by-step
++     Example: "x + 3 = 5 -> x = 5 - 3 = 2" NOT "x = 2"
++   * Justify EVERY claim with reasoning
++     Example: "by AM-GM on a,b" NOT "clearly this holds"
++   * Handle ALL cases explicitly (never "similarly for other cases")
++   * For each inequality: Show the direction of each step
++   * For "find all": After finding candidates, prove completeness
++   * State all assumptions and when you use them
++
++4. **VERIFICATION**
++   * Substitute solutions back into the ORIGINAL problem
++   * Check ALL constraints are satisfied (not just one)
++   * Test boundary/edge cases (x=0, n=1, equality conditions, etc.)
++   * State your final answer clearly and completely
++
++----------------------------------------------------------------
++
++**EXAMPLES OF RIGOROUS WORK:**
++
++BAD [x]: "Clearly, x = 2 satisfies the equation."
++GOOD [v]: "Substituting x = 2: LHS = 2^2 + 2(2) = 4 + 4 = 8. RHS = 8. Since LHS = RHS, x = 2 is a solution."
++
++BAD [x]: "By AM-GM, we get the result."
++GOOD [v]: "By AM-GM on positive numbers a, b: (a + b)/2 >= sqrt(ab). Setting a = x^2, b = 4: (x^2 + 4)/2 >= sqrt(4x^2) = 2|x| = 2x (since x > 0)."
++
++BAD [x]: "The other cases are similar."
++GOOD [v]: "Case 2 (when n is even): Let n = 2k. Then f(n) = f(2k) = ... [full derivation] ..."
++
++BAD [x]: "It's obvious that no other solutions exist."
++GOOD [v]: "To prove these are the only solutions: Suppose f(x) is a solution. Then [show f must satisfy certain properties]. This forces f(x) = ... [unique form]."
++
++----------------------------------------------------------------
++
++Now solve the problem with COMPLETE, RIGOROUS work showing EVERY step."""
+             
+             # Phase 2: Self-critique and detail expansion
+             phase2_instruction = f"""You are a rigorous IMO grader reviewing a proof for completeness.
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 3a0007d..24010bb 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -51,10 +51,11 @@ You MUST write EVERY step explicitly with full justification.
+    * List 3-5 possible approaches with brief pros/cons
+ 
+ 2. **STRATEGY SELECTION**
+-   * Choose ONE approach and explicitly state why
++   * Choose ONE approach and explicitly state why it's promising
+    * For inequalities: Consider AM-GM, Cauchy-Schwarz, Jensen's, rearrangement, smoothing
+    * For "find all": Must do (a) find candidates, (b) verify each, (c) prove no others exist
+-   * Outline the main steps of your proof strategy
++   * For functional equations: Try substitution patterns (P(x,y), P(0,0), P(x,x), etc.)
++   * Outline 3-5 main steps of your proof strategy before starting
+ 
+ 3. **COMPLETE RIGOROUS PROOF**
+    * Show EVERY algebraic manipulation step-by-step
+@@ -65,12 +66,16 @@ You MUST write EVERY step explicitly with full justification.
+    * For each inequality: Show the direction of each step
+    * For "find all": After finding candidates, prove completeness
+    * State all assumptions and when you use them
++   * Work methodically - don't skip steps even if they seem obvious
++   * Check your work as you go - catch errors early
+ 
+-4. **VERIFICATION**
++4. **VERIFICATION & FINAL ANSWER**
+    * Substitute solutions back into the ORIGINAL problem
+    * Check ALL constraints are satisfied (not just one)
+    * Test boundary/edge cases (x=0, n=1, equality conditions, etc.)
+-   * State your final answer clearly and completely
++   * For "find all" problems: State ALL solutions clearly in a list
++   * Box your final answer: **FINAL ANSWER: [your complete answer]**
++   * Ensure the answer directly addresses what was asked
+ 
+ ----------------------------------------------------------------
+ 
+@@ -122,6 +127,8 @@ Your Initial Proof:
+ **FORBIDDEN PHRASES CHECK:**
+ [ ] No "omitted for brevity", "left to reader", "routine", "trivial" without proof?
+ [ ] No "clearly"/"obviously" without justification?
++[ ] No "it can be shown" without actually showing it?
++[ ] No "by similar reasoning" without repeating the reasoning?
+ 
+ Now do TWO things:
+ 
+@@ -129,20 +136,26 @@ Now do TWO things:
+    - "Line X: jumped from A to B without showing the algebra"
+    - "Did not verify candidate x=2 in original equation"
+    - "Completeness argument missing for why no other solutions exist"
++   - "Missing case when n is even"
++   - "Did not check boundary condition at x=0"
+ 
+-2. **EXPANDED PROOF**: Rewrite the proof filling ALL identified gaps. Show:
+-   - Every algebraic step explicitly
+-   - Full justifications for each claim
+-   - Complete verification of all solutions
++2. **EXPANDED PROOF**: Rewrite the COMPLETE proof filling ALL identified gaps. Show:
++   - Every algebraic step explicitly with intermediate calculations
++   - Full justifications for each claim (cite theorems/inequalities used)
++   - Complete verification of all solutions in the original problem
+    - Explicit completeness arguments for "find all" problems
++   - All cases handled separately with full derivations
+ 
+ Format your response as:
+ 
+ **GAPS IDENTIFIED:**
+-[List specific missing details]
++[List specific missing details, be concrete]
+ 
+ **COMPLETE RIGOROUS PROOF:**
+-[Full proof with all gaps filled]"""
++[Full proof with all gaps filled]
++
++**FINAL ANSWER:**
++[State the complete answer clearly and explicitly]"""
+             
+             # Execute two-phase proof generation
+             self.log("Phase 1: Generating initial proof attempt...")
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 24010bb..5ab7ae1 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -221,45 +221,76 @@ Respond in JSON format with the following schema:
+                 if new_msg_history and 'text' in new_msg_history[-1]:
+                     full_response = new_msg_history[-1]['text'].strip()
+                     
+-                    # Try to extract the "COMPLETE RIGOROUS PROOF" section if it exists (from Phase 2)
+-                    if 'COMPLETE RIGOROUS PROOF:' in full_response:
+-                        # Find the section after "COMPLETE RIGOROUS PROOF:"
+-                        marker_variants = [
+-                            'COMPLETE RIGOROUS PROOF:',
+-                            '**COMPLETE RIGOROUS PROOF:**',
+-                            'COMPLETE RIGOROUS PROOF',
+-                        ]
+-                        
+-                        extracted = None
+-                        for marker in marker_variants:
+-                            if marker in full_response:
+-                                parts = full_response.split(marker, 1)
+-                                if len(parts) > 1:
+-                                    extracted = parts[1].strip()
+-                                    # Remove any trailing markdown markers
+-                                    if extracted.startswith('\n'):
+-                                        extracted = extracted.lstrip('\n')
+-                                    self.log(f"Extracted Phase 2 expanded proof using marker '{marker}' (length: {len(extracted)} chars)")
+-                                    break
+-                        
+-                        if extracted:
+-                            prediction = extracted
++                    # Try to extract the improved proof section from Phase 2 output
++                    # Look for various proof section markers
++                    proof_markers = [
++                        '**IMPROVED PROOF:**',
++                        '**COMPLETE RIGOROUS PROOF:**',
++                        'IMPROVED PROOF:',
++                        'COMPLETE RIGOROUS PROOF:',
++                    ]
++                    
++                    extracted = None
++                    for marker in proof_markers:
++                        if marker in full_response:
++                            # Extract from marker to the next major section or end
++                            parts = full_response.split(marker, 1)
++                            if len(parts) > 1:
++                                proof_section = parts[1]
++                                
++                                # Find where the proof section ends (before FINAL ANSWER or end of text)
++                                end_markers = ['**FINAL ANSWER:**', 'FINAL ANSWER:', '\n\n**FINAL ANSWER']
++                                end_pos = len(proof_section)
++                                for end_marker in end_markers:
++                                    pos = proof_section.find(end_marker)
++                                    if pos != -1 and pos < end_pos:
++                                        end_pos = pos
++                                
++                                extracted = proof_section[:end_pos].strip()
++                                self.log(f"Extracted proof section using marker '{marker}' (length: {len(extracted)} chars)")
++                                break
++                    
++                    if extracted:
++                        prediction = extracted
++                    elif 'GAPS IDENTIFIED' in full_response:
++                        # Phase 2 format detected but no clear proof marker
++                        # Try to extract everything after the gaps section
++                        if '**GAPS IDENTIFIED:**' in full_response:
++                            parts = full_response.split('**GAPS IDENTIFIED:**', 1)
++                            if len(parts) > 1:
++                                # Skip the gaps section, look for the next major section
++                                remaining = parts[1]
++                                # Find the start of the next section (after gaps list)
++                                lines = remaining.split('\n')
++                                proof_start = 0
++                                for i, line in enumerate(lines):
++                                    # Look for section headers or substantial content after gaps
++                                    if line.strip().startswith('**') and 'PROOF' in line.upper():
++                                        proof_start = i
++                                        break
++                                    elif i > 10 and line.strip() and not line.strip().startswith(('-', '*', '1.', '2.', '3.')):
++                                        # Found substantial content after gaps list
++                                        proof_start = i
++                                        break
++                                
++                                if proof_start > 0:
++                                    extracted = '\n'.join(lines[proof_start:]).strip()
++                                    # Remove final answer section if present
++                                    for end_marker in ['**FINAL ANSWER:**', 'FINAL ANSWER:']:
++                                        if end_marker in extracted:
++                                            extracted = extracted.split(end_marker)[0].strip()
++                                    prediction = extracted
++                                    self.log(f"Extracted proof after gaps section (length: {len(prediction)} chars)")
++                                else:
++                                    prediction = full_response
++                                    self.log(f"Could not parse Phase 2 format, using full response (length: {len(prediction)} chars)")
+                         else:
+-                            # Fallback: use full response if extraction failed
+                             prediction = full_response
+-                            self.log(f"Phase 2 marker found but extraction failed, using full response (length: {len(prediction)} chars)")
++                            self.log(f"Using full Phase 2 output (length: {len(prediction)} chars)")
+                     else:
+-                        # No Phase 2 marker found - this might be Phase 1 only or the full Phase 2 response
+-                        # Check if it contains "GAPS IDENTIFIED" which indicates Phase 2 format
+-                        if 'GAPS IDENTIFIED' in full_response:
+-                            # This is Phase 2 output but without clear section markers
+-                            # Use the full output as it contains both gaps and expanded proof
+-                            prediction = full_response
+-                            self.log(f"Using full Phase 2 output with gaps analysis (length: {len(prediction)} chars)")
+-                        else:
+-                            # Pure Phase 1 output
+-                            prediction = full_response
+-                            self.log(f"Using Phase 1 proof (length: {len(prediction)} chars)")
++                        # Pure Phase 1 output or unrecognized format
++                        prediction = full_response
++                        self.log(f"Using full response (length: {len(prediction)} chars)")
+             else:
+                 # For other domains, use JSON extraction
+                 extracted_jsons = extract_jsons(new_msg_history[-1]['text'])
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 5ab7ae1..3c9e1ba 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -36,6 +36,7 @@ IMO graders give 0 points for:
+ * Phrases like "clearly", "obviously", "trivial" without justification  
+ * "Similar for other cases" without showing the work
+ * Any gaps in reasoning or algebra
++* Missing verification that solutions satisfy ALL constraints
+ 
+ You MUST write EVERY step explicitly with full justification.
+ 
+@@ -55,6 +56,7 @@ You MUST write EVERY step explicitly with full justification.
+    * For inequalities: Consider AM-GM, Cauchy-Schwarz, Jensen's, rearrangement, smoothing
+    * For "find all": Must do (a) find candidates, (b) verify each, (c) prove no others exist
+    * For functional equations: Try substitution patterns (P(x,y), P(0,0), P(x,x), etc.)
++   * For "prove/show" problems: Identify what exactly needs to be established
+    * Outline 3-5 main steps of your proof strategy before starting
+ 
+ 3. **COMPLETE RIGOROUS PROOF**
+@@ -74,8 +76,10 @@ You MUST write EVERY step explicitly with full justification.
+    * Check ALL constraints are satisfied (not just one)
+    * Test boundary/edge cases (x=0, n=1, equality conditions, etc.)
+    * For "find all" problems: State ALL solutions clearly in a list
++   * Verify your answer matches the problem type (set of functions, inequality bound, etc.)
+    * Box your final answer: **FINAL ANSWER: [your complete answer]**
+    * Ensure the answer directly addresses what was asked
++   * Double-check: Does your final answer make sense in context?
+ 
+ ----------------------------------------------------------------
+\end{lstlisting}
+
+\begin{lstlisting}[language=Diff]
+diff --git a/task_agent.py b/task_agent.py
+index 3c9e1ba..7ebf4c4 100644
+--- a/task_agent.py
++++ b/task_agent.py
+@@ -161,7 +161,68 @@ Format your response as:
+ **FINAL ANSWER:**
+ [State the complete answer clearly and explicitly]"""
+             
+-            # Execute two-phase proof generation
++            # Phase 3: Final answer verification and extraction
++            phase3_instruction = f"""You are verifying the final answer to an IMO proof problem.
++
++Original Problem:
++{problem}
++
++Complete Proof:
++{{complete_proof}}
++
++----------------------------------------------------------------
++[!]  CRITICAL: EXTRACT AND VERIFY THE FINAL ANSWER  [!]
++----------------------------------------------------------------
++
++Your task: Verify the proof leads to a clear, correct final answer.
++
++**VERIFICATION STEPS:**
++
++1. **IDENTIFY WHAT WAS ASKED:**
++   * Re-read the problem statement
++   * What type of answer is required?
++     - "Find all" -> list of all solutions
++     - "Prove" -> statement confirmation
++     - "Determine" -> specific value(s)
++     - "Show that" -> verification of property
++
++2. **EXTRACT THE ANSWER FROM PROOF:**
++   * What does the proof conclude?
++   * Is the answer explicitly stated?
++   * Does it match the question format?
++
++3. **SANITY CHECKS:**
++   * Does the answer make mathematical sense?
++   * For "find all": Are all solutions listed? Is completeness proven?
++   * For numerical answers: Are units/constraints satisfied?
++   * For functional equations: Is the function form complete?
++   * Test edge cases: Does answer work for simple inputs?
++
++4. **COMPLETENESS CHECK:**
++   * "Find all" problems: Must list ALL solutions and prove no others exist
++   * Inequality problems: Must show the bound is achieved
++   * Existence problems: Must provide explicit construction
++
++----------------------------------------------------------------
++
++Provide your response in this format:
++
++**ANSWER TYPE REQUIRED:** [What the problem asks for]
++
++**ANSWER FROM PROOF:** [What the proof concludes]
++
++**VERIFICATION:**
++[v] or [x] Answer directly addresses the question
++[v] or [x] Answer is complete (all solutions if "find all")
++[v] or [x] Answer is explicitly stated in correct format
++[v] or [x] Answer satisfies sanity checks
++
++**ISSUES (if any):** [List any problems with the answer]
++
++**FINAL VERIFIED ANSWER:**
++[State the answer in the clearest, most direct form that answers the original question]"""
++            
++            # Execute three-phase proof generation
+             self.log("Phase 1: Generating initial proof attempt...")
+             phase1_history = chat_with_agent(phase1_instruction, model=self.model, msg_history=[], logging=self.log)
+             
+@@ -177,12 +238,20 @@ Format your response as:
+                 # Check if Phase 2 produced output
+                 if phase2_history and 'text' in phase2_history[-1]:
+                     phase2_output = phase2_history[-1]['text'].strip()
+-                    # Try to extract the expanded proof from Phase 2
+-                    if 'COMPLETE RIGOROUS PROOF' in phase2_output or 'EXPANDED PROOF' in phase2_output:
+-                        self.log(f"Phase 2 complete with expanded proof. Total length: {len(phase2_output)} chars")
++                    self.log(f"Phase 2 complete. Total length: {len(phase2_output)} chars")
++                    
++                    # Phase 3: Answer verification and extraction
++                    self.log("Phase 3: Verifying and extracting final answer...")
++                    phase3_filled = phase3_instruction.replace('{complete_proof}', phase2_output)
++                    phase3_history = chat_with_agent(phase3_filled, model=self.model, msg_history=[], logging=self.log)
++                    
++                    if phase3_history and 'text' in phase3_history[-1]:
++                        phase3_output = phase3_history[-1]['text'].strip()
++                        self.log(f"Phase 3 complete. Verification length: {len(phase3_output)} chars")
++                        # Use Phase 2 proof but log Phase 3 verification
+                         new_msg_history = phase2_history
+                     else:
+-                        self.log("Phase 2 complete but no clear expanded proof marker found, using Phase 2 full output")
++                        self.log("Warning: Phase 3 failed, using Phase 2 output")
+                         new_msg_history = phase2_history
+                 else:
+                     self.log("Warning: Phase 2 failed, falling back to Phase 1")
+\end{lstlisting}

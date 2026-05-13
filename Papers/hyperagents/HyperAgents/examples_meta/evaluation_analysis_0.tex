@@ -1,0 +1,31 @@
+\begin{lstlisting}[language=Python]
+def _analyze_evaluations(self, eval_path):
+    """Analyze evaluation results to provide context for improvements."""
+    if not eval_path or not os.path.exists(eval_path):
+        return "No previous evaluation results available."
+
+    # Recursively scan for evaluation files
+    eval_files = glob.glob(os.path.join(eval_path, '**/*.json'), recursive=True)
+
+    # Analyze recent evaluations
+    results_summary = []
+    success_count = 0
+    failure_count = 0
+
+    for eval_file in eval_files[-10:]:
+        if file_exist_and_not_empty(eval_file):
+            data = load_json_file(eval_file)
+            if isinstance(data, dict):
+                if data.get('success', False) or data.get('correct', False):
+                    success_count += 1
+                else:
+                    failure_count += 1
+                    if 'error' in data:
+                        results_summary.append(f"Error: {data['error']}")
+
+    # Generate quantitative summary
+    total = success_count + failure_count
+    if total > 0:
+        success_rate = (success_count / total) * 100
+        return f"Success rate: {success_rate:.1f}% ({success_count}/{total})"
+\end{lstlisting}
